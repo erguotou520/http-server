@@ -14,7 +14,7 @@ async fn main() {
             println!("update");
         },
         None => {
-            _ = start_server().await
+            _ = start_server(cli).await
         }
     }
 }
