@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+  <style>
+  body {
+    color: #333;
+  }
+  ul {
+    list-style-type: none;
+    padding: 0;
+  }
+  ul li {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+  }
+  .update-time {
+    display: inline-block;
+    width: 180px;
+    color: #888;
+  }
+  .size {
+    margin-left: auto;
+    margin-right: 1em;
+    color: #888;
+  }
+  </style>
+</head>
+<body>
+  <ul>
+    {% for file in files -%}
+    <li>
+      <span class="update-time">{{file.update_time}}</span>
+      <span class="size">{{file.size}}</span>
+      <a href="{{file.path}}">{{file.name}}{% if file.is_dir %}/{% endif %}</a>
+    </li>
+    {% endfor -%}
+  </ul>
+</body>
+</html>
