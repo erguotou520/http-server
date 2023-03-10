@@ -4,41 +4,87 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{title}}</title>
+  <title>{{path}}</title>
   <style>
   body {
-    color: #333;
+    margin: 0;
+    padding: 2% 8%;
+    color: var(--primary-text-color);
+    --highlight-color: #2074f8;
+    --primary-text-color: #333;
+    --minor-text-color: #888;
   }
-  ul {
-    list-style-type: none;
-    padding: 0;
+  a:-webkit-any-link {
+    color: inherit;
+    text-decoration: none;
   }
-  ul li {
-    display: flex;
-    align-items: center;
-    padding: 6px 0;
+  a:not(.normal) {
+    color: var(--highlight-color);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  h3 {
+    margin-bottom: 2em;
+  }
+  table {
+    width: 100%;
+    margin-left: -8px;
+    margin-right: -8px;
+    table-layout: fixed;
+    border: none;
+    border-collapse: collapse;
+  }
+  table th, table td {
+    padding: 6px 8px;
+    border: none;
+    text-align: left;
+  }
+  table tr:hover td {
+    background-color: rgba(0,0,0,0.1);
+    border-radius: 2px;
   }
   .update-time {
-    display: inline-block;
-    width: 180px;
-    color: #888;
+    color: var(--minor-text-color);
   }
   .size {
-    margin-left: auto;
-    margin-right: 1em;
-    color: #888;
+    color: var(--minor-text-color);
+  }
+  footer {
+    margin-top: 10em;
+    font-style: italic;
+    color: var(--minor-text-color);
   }
   </style>
 </head>
 <body>
-  <ul>
-    {% for file in files -%}
-    <li>
-      <span class="update-time">{{file.update_time}}</span>
-      <span class="size">{{file.size}}</span>
-      <a href="{{file.path}}">{{file.name}}{% if file.is_dir %}/{% endif %}</a>
-    </li>
-    {% endfor -%}
-  </ul>
+  <h2>Index of {% for path in path_list -%}
+    <a class="normal" href="{% for p in 0..(path_list.len() - loop.index0 - 1) %}/{{path_list[loop.index0]}}{% endfor %}">{{path}}</a><span style="margin:0 2px;">{% if !loop.last %}/{% endif %}</span>{% endfor -%}
+  </h2>
+  <table>
+    <thead>
+      <th style="width:55%;">name</th>
+      <th style="width:25%;min-width:120px;">update time</th>
+      <th style="width:20%;min-width: 80px;">size</th>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="3"><a href="/{{parent_path}}">../</a></td>
+      </tr>
+      {% for file in files -%}
+      <tr>
+        <td>
+          <a href="/{{file.path}}">
+            {{file.name}}{% if file.is_dir %}/{% endif %}
+          </a>
+        </td>
+        <td class="size">{{file.update_time}}</td>
+        <td class="update-time">{% if !file.is_dir %}{{file.size}}{% endif %}</td>
+      </tr>
+      {% endfor -%}
+    </tbody>
+  </table>
+  <footer>Http server - Powered by <a href="https://github.com/erguotou520/http-server" target="github">hs</a></footer>
 </body>
 </html>

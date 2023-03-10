@@ -16,7 +16,9 @@ use askama::Template;
 #[derive(Template)]
 #[template(path = "list.html")]
 struct ListTemplate {
-    title: String,
+    path: String,
+    path_list: Vec<String>,
+    parent_path: String,
     files: Vec<FileItem>,
 }
 
@@ -62,8 +64,14 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
                     })
                 }
             }
+            let full_path = String::from(path.to_str().unwrap());
+            let path_list: Vec<String> = full_path.split("/").map(|s| s.to_string()).collect();
+            let mut parent_list = path_list.clone();
+            parent_list.pop();
             let html = ListTemplate {
-                title: String::from(path.to_str().unwrap()),
+                path: full_path.clone(),
+                path_list,
+                parent_path: parent_list.join("/"),
                 files,
             }
             .render()
@@ -76,7 +84,7 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
             let response =
                 file.use_last_modified(true)
                     .set_content_disposition(ContentDisposition {
-                        disposition: DispositionType::Attachment,
+                        disposition: DispositionType::Inline,
                         parameters: vec![],
                     });
             Ok(response.into_response(&req))
@@ -98,8 +106,9 @@ fn format_file_size(file_size: u64) -> String {
         converted_size /= 1024.0;
         unit_index += 1;
     }
+    let size = (converted_size * 100.0).floor() / 100.0;
 
-    format!("{:.2} {}", converted_size, units[unit_index])
+    format!("{} {}", size, units[unit_index])
 }
 
 pub async fn start_server(options: Cli) -> std::io::Result<()> {
