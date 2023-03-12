@@ -1,15 +1,16 @@
 use chrono::prelude::DateTime;
 use chrono::Local;
-use std::fs::{self};
+use std::fs::read_dir;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use actix_files as afs;
+use actix_files::NamedFile;
 use actix_web::http::header::{ContentDisposition, DispositionType};
-use actix_web::{get, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{get, middleware, App, Error, HttpRequest, HttpResponse, HttpServer};
 use local_ip_address::list_afinet_netifas;
+use open::that;
 
-use crate::cli::Cli;
+use crate::cli::CliOption;
 
 use askama::Template;
 
@@ -36,50 +37,10 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
 
     let existed = path.try_exists().unwrap();
     if existed {
-        let file = afs::NamedFile::open(&path)?;
+        let file = NamedFile::open(&path)?;
         if file.metadata().is_dir() {
-            let mut files: Vec<FileItem> = vec![];
-            for file in fs::read_dir(&path)? {
-                let file = file?;
-                let file_path = String::from(file.path().to_str().unwrap());
-                let name = String::from(file.file_name().to_str().unwrap());
-                let modified = file.metadata()?.modified()?;
-                let modified_local: DateTime<Local> = modified.into();
-                let update_time = modified_local.format("%Y-%m-%d %H:%M:%S").to_string();
-                if file.path().is_dir() {
-                    files.push(FileItem {
-                        name,
-                        path: file_path,
-                        is_dir: true,
-                        size: String::from("0"),
-                        update_time,
-                    })
-                } else {
-                    files.push(FileItem {
-                        name,
-                        path: file_path,
-                        is_dir: false,
-                        size: format_file_size(file.metadata()?.len()),
-                        update_time,
-                    })
-                }
-            }
-            let full_path = String::from(path.to_str().unwrap());
-            let path_list: Vec<String> = full_path.split("/").map(|s| s.to_string()).collect();
-            let mut parent_list = path_list.clone();
-            parent_list.pop();
-            let html = ListTemplate {
-                path: full_path.clone(),
-                path_list,
-                parent_path: parent_list.join("/"),
-                files,
-            }
-            .render()
-            .unwrap();
-            let response = HttpResponse::Ok()
-                .content_type("text/html; charset=utf-8")
-                .body(html);
-            Ok(response)
+            // TODO 根据cli参数判断是渲染列表页面还是直接返回index.html
+            render_dir_index(path)
         } else {
             let response =
                 file.use_last_modified(true)
@@ -97,6 +58,58 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
     }
 }
 
+fn render_dir_index(path: PathBuf) -> Result<HttpResponse, Error>
+{
+    let mut files: Vec<FileItem> = vec![];
+    // 遍历目录
+    for file in read_dir(&path)? {
+        let file = file?;
+        let file_path = String::from(file.path().to_str().unwrap());
+        let name = String::from(file.file_name().to_str().unwrap());
+        let modified = file.metadata()?.modified()?;
+        let modified_local: DateTime<Local> = modified.into();
+        let update_time = modified_local.format("%Y-%m-%d %H:%M:%S").to_string();
+        if file.path().is_dir() {
+            files.push(FileItem {
+                name,
+                path: file_path,
+                is_dir: true,
+                size: String::from("0"),
+                update_time,
+            })
+        } else {
+            files.push(FileItem {
+                name,
+                path: file_path,
+                is_dir: false,
+                size: format_file_size(file.metadata()?.len()),
+                update_time,
+            })
+        }
+    }
+    // 全路径
+    let full_path = String::from(path.to_str().unwrap());
+    // 路径按照/分隔
+    let path_list: Vec<String> = full_path.split("/").map(|s| s.to_string()).collect();
+    // 上级路径
+    let mut parent_list = path_list.clone();
+    parent_list.pop();
+
+    // 渲染页面
+    let html = ListTemplate {
+        path: full_path.clone(),
+        path_list,
+        parent_path: parent_list.join("/"),
+        files,
+    }
+    .render()
+    .unwrap();
+    let response = HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html);
+    Ok(response)
+}
+
 fn format_file_size(file_size: u64) -> String {
     let mut converted_size = file_size as f64;
     let units = ["B", "KB", "MB", "GB", "TB"];
@@ -111,23 +124,101 @@ fn format_file_size(file_size: u64) -> String {
     format!("{} {}", size, units[unit_index])
 }
 
-pub async fn start_server(options: Cli) -> std::io::Result<()> {
-    let server = HttpServer::new(|| App::new().service(handler));
+// fn create_server(user_id: &str, password: &str) {
+//     let server = HttpServer::new(move || {
+//         // TODO 根据gzip来判断
+//         App::new()
+//             .wrap(middleware::Compress::default())
+//             .wrap(HttpAuthentication::basic(move |req, credentials| async {
+//                 if user_id.is_empty() {
+//                     Ok(req)
+//                 } else {
+//                     if credentials.user_id().eq(user_id)
+//                         && credentials.password().unwrap().eq(password)
+//                     {
+//                         Ok(req)
+//                     } else {
+//                         let config = req
+//                             .app_data::<Config>()
+//                             .cloned()
+//                             .unwrap_or_default();
+//                         Err((
+//                             actix_web::Error::from(AuthenticationError::from(config)),
+//                             req,
+//                         ))
+//                     }
+//                 }
+//             }))
+//             .service(handler)
+//     });
+//     server
+// }
 
-    if let Ok(server) = server.bind(("0.0.0.0", options.port)) {
-        print_all_host(options.port);
+pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
+    let mut _user_id = "";
+    let mut _password = "";
+    if let Some(security) = &options.security {
+        let parts: Vec<&str> = security.split(',').collect();
+        if parts.len() != 2 {
+            panic!("Error when parse basic auth")
+        }
+        _user_id = parts[0];
+        _password = parts[1];
+    }
+    let server = HttpServer::new(move || {
+        // TODO 根据gzip来判断
+        App::new()
+            .wrap(middleware::Compress::default())
+            // TODO basic auth 类型一直有问题
+            // .wrap(HttpAuthentication::basic(move |req, credentials| async {
+            //     if user_id.is_empty() {
+            //         Ok(req)
+            //     } else {
+            //         if credentials.user_id().eq(user_id)
+            //             && credentials.password().unwrap().eq(password)
+            //         {
+            //             Ok(req)
+            //         } else {
+            //             let config = req
+            //                 .app_data::<Config>()
+            //                 .cloned()
+            //                 .unwrap_or_default();
+            //             Err((
+            //                 actix_web::Error::from(AuthenticationError::from(config)),
+            //                 req,
+            //             ))
+            //         }
+            //     }
+            // }))
+            .service(handler)
+    });
+
+    let host = options.host.as_str();
+
+    if let Ok(server) = server.bind((host, options.port)) {
+        print_all_host(host, options.port, options.open);
         server.run().await
     } else {
         panic!("port {} is in use.", options.port);
     }
 }
 
-fn print_all_host(port: u16) {
-    let ifas = list_afinet_netifas().unwrap();
+fn print_all_host(host: &str, port: u16, open: bool) {
+    if host.eq("0.0.0.0") {
+        let ifas = list_afinet_netifas().unwrap();
 
-    for (_, ip) in ifas.iter() {
-        if matches!(ip, IpAddr::V4(_)) {
-            println!("  http://{:?}:{}", ip, port);
+        for (_, ip) in ifas.iter() {
+            if matches!(ip, IpAddr::V4(_)) {
+                println!("  http://{:?}:{}", ip, port);
+            }
+        }
+        if open && !ifas.is_empty() {
+            let _ = that(format!("http://{:?}:{}", ifas[0].1, port));
+        }
+    } else {
+        println!("  http://{}:{}", host, port);
+        if open {
+            let _ = that(format!("http://{}:{}", host, port));
         }
     }
 }
