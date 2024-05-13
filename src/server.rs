@@ -39,8 +39,11 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
     if existed {
         let file = NamedFile::open(&path)?;
         if file.metadata().is_dir() {
-            // TODO 根据cli参数判断是渲染列表页面还是直接返回index.html
-            render_dir_index(path)
+            if let Ok(response) = autoRenderIndexHtml(path.clone()) {
+                Ok(response)
+            } else {
+                render_dir_index(path)
+            }
         } else {
             let response =
                 file.use_last_modified(true)
@@ -51,15 +54,18 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
             Ok(response.into_response(&req))
         }
     } else {
-        let response = HttpResponse::NotFound()
-            .content_type("text/html; charset=utf-8")
-            .body("404");
-        Ok(response)
+        if let Ok(response) = autoRenderIndexHtml(path.clone()) {
+            Ok(response)
+        } else {
+            let response = HttpResponse::NotFound()
+                .content_type("text/html; charset=utf-8")
+                .body("404");
+            Ok(response)
+        }
     }
 }
 
-fn render_dir_index(path: PathBuf) -> Result<HttpResponse, Error>
-{
+fn render_dir_index(path: PathBuf) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
     // 遍历目录
     for file in read_dir(&path)? {
@@ -124,35 +130,22 @@ fn format_file_size(file_size: u64) -> String {
     format!("{} {}", size, units[unit_index])
 }
 
-// fn create_server(user_id: &str, password: &str) {
-//     let server = HttpServer::new(move || {
-//         // TODO 根据gzip来判断
-//         App::new()
-//             .wrap(middleware::Compress::default())
-//             .wrap(HttpAuthentication::basic(move |req, credentials| async {
-//                 if user_id.is_empty() {
-//                     Ok(req)
-//                 } else {
-//                     if credentials.user_id().eq(user_id)
-//                         && credentials.password().unwrap().eq(password)
-//                     {
-//                         Ok(req)
-//                     } else {
-//                         let config = req
-//                             .app_data::<Config>()
-//                             .cloned()
-//                             .unwrap_or_default();
-//                         Err((
-//                             actix_web::Error::from(AuthenticationError::from(config)),
-//                             req,
-//                         ))
-//                     }
-//                 }
-//             }))
-//             .service(handler)
-//     });
-//     server
-// }
+// 如果路径下有index.html，则直接返回index.html
+fn autoRenderIndexHtml(path: PathBuf) -> Result<HttpResponse, Error> {
+    // 拼接 index.html 路径
+    let index_path = path.join("index.html");
+    if index_path.exists() {
+        let file = NamedFile::open(&index_path)?;
+        let response = file
+            .use_last_modified(true)
+            .set_content_disposition(ContentDisposition {
+                disposition: DispositionType::Inline,
+                parameters: vec![],
+            });
+        Ok(response.into_response(&req))
+    }
+    Err(())
+}
 
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let mut _user_id = "";
