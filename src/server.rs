@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use actix_files::NamedFile;
 use actix_web::http::header::{ContentDisposition, DispositionType};
-use actix_web::{get, middleware, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{get, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use local_ip_address::list_afinet_netifas;
 use open::that;
 
@@ -33,14 +33,15 @@ struct FileItem {
 
 #[get("/{filename:.*}")]
 async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
+    // web::scope(path)
     let path: PathBuf = req.match_info().query("filename").parse().unwrap();
 
     let existed = path.try_exists().unwrap();
     if existed {
         let file = NamedFile::open(&path)?;
         if file.metadata().is_dir() {
-            if let Ok(response) = autoRenderIndexHtml(path.clone()) {
-                Ok(response)
+            if let Ok(response) = auto_render_index_html(path.clone()) {
+                Ok(response.into_response(&req))
             } else {
                 render_dir_index(path)
             }
@@ -54,8 +55,8 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
             Ok(response.into_response(&req))
         }
     } else {
-        if let Ok(response) = autoRenderIndexHtml(path.clone()) {
-            Ok(response)
+        if let Ok(response) = auto_render_index_html(path.clone()) {
+            Ok(response.into_response(&req))
         } else {
             let response = HttpResponse::NotFound()
                 .content_type("text/html; charset=utf-8")
@@ -131,20 +132,21 @@ fn format_file_size(file_size: u64) -> String {
 }
 
 // 如果路径下有index.html，则直接返回index.html
-fn autoRenderIndexHtml(path: PathBuf) -> Result<HttpResponse, Error> {
+fn auto_render_index_html(path: PathBuf) -> Result<NamedFile, bool> {
     // 拼接 index.html 路径
     let index_path = path.join("index.html");
     if index_path.exists() {
-        let file = NamedFile::open(&index_path)?;
-        let response = file
-            .use_last_modified(true)
-            .set_content_disposition(ContentDisposition {
-                disposition: DispositionType::Inline,
-                parameters: vec![],
-            });
-        Ok(response.into_response(&req))
+        if let Ok(file) = NamedFile::open(&index_path) {
+            let response = file
+                .use_last_modified(true)
+                .set_content_disposition(ContentDisposition {
+                    disposition: DispositionType::Inline,
+                    parameters: vec![],
+                });
+            return Ok(response);
+        }
     }
-    Err(())
+    Err(false)
 }
 
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
