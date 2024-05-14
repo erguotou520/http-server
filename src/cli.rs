@@ -1,9 +1,7 @@
-use std::path::PathBuf;
+use clap::{Parser, Subcommand};
 
-use clap::{Parser, Subcommand, ValueEnum};
-
-#[derive(Copy, Debug, Clone)]
-enum RunMode {
+#[derive(clap::ValueEnum, Copy, Clone, Debug)]
+pub enum WorkMode {
     // 默认
     Default,
     // SPA模式
@@ -16,16 +14,20 @@ enum RunMode {
 #[derive(Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct CliOption {
-    /// Force enable file index
-    #[arg(short = 'm', long, default_value = RunMode::Default)]
-    pub mode: RunMode,
+    /// Work mode
+    #[arg(short = 'm', long)]
+    pub mode: Option<WorkMode>,
 
-    /// Config file path
-    #[arg(short = 'f', long, value_name = "FILE")]
-    pub config: Option<PathBuf>,
+    /// Folder to serve
+    #[arg(short = 'p', long, value_name = "PATH", default_value_t = String::from("."))]
+    pub path: String,
+
+    /// Base URL path
+    #[arg(short = 'b', long, value_name = "BASE", default_value_t = String::from("/"))]
+    pub base: String,
 
     /// Host to listen on
-    #[arg(short = 'H', long, value_name = "HOST", default_value_t = String::from("0.0.0.0"))]
+    #[arg(short = 'h', long, value_name = "HOST", default_value_t = String::from("0.0.0.0"))]
     pub host: String,
 
     /// Port to listen on
@@ -45,8 +47,12 @@ pub struct CliOption {
     pub cache: String,
 
     /// Path to save log at
-    #[arg(short = 'l', long, value_name = "LOG")]
+    #[arg(long, value_name = "LOG")]
     pub log: Option<String>,
+
+    /// Path to save error log at
+    #[arg(long, value_name = "ERROR_LOG")]
+    pub error_log: Option<String>,
 
     /// Enable upload
     #[arg(short = 'u', long, value_name = "UPLOAD", default_value_t = false)]

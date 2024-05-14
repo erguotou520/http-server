@@ -1,3 +1,8 @@
+use actix_web::dev::ServiceRequest;
+use actix_web::error::ErrorUnauthorized;
+use actix_web_httpauth::extractors::basic::BasicAuth;
+use actix_web_httpauth::extractors::AuthenticationError;
+use actix_web_httpauth::middleware::HttpAuthentication;
 use chrono::prelude::DateTime;
 use chrono::Local;
 use std::fs::read_dir;
@@ -29,6 +34,11 @@ struct FileItem {
     is_dir: bool,
     size: String,
     update_time: String,
+}
+
+struct BasicAuthState {
+    username: String,
+    password: String,
 }
 
 #[get("/{filename:.*}")]
@@ -137,33 +147,85 @@ fn auto_render_index_html(path: PathBuf) -> Result<NamedFile, bool> {
     let index_path = path.join("index.html");
     if index_path.exists() {
         if let Ok(file) = NamedFile::open(&index_path) {
-            let response = file
-                .use_last_modified(true)
-                .set_content_disposition(ContentDisposition {
-                    disposition: DispositionType::Inline,
-                    parameters: vec![],
-                });
+            let response =
+                file.use_last_modified(true)
+                    .set_content_disposition(ContentDisposition {
+                        disposition: DispositionType::Inline,
+                        parameters: vec![],
+                    });
             return Ok(response);
         }
     }
     Err(false)
 }
 
-pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
-    let mut _user_id = "";
-    let mut _password = "";
-    if let Some(security) = &options.security {
-        let parts: Vec<&str> = security.split(',').collect();
-        if parts.len() != 2 {
-            panic!("Error when parse basic auth")
+pub async fn basic_auth(
+    req: ServiceRequest,
+    credentials: BasicAuth,
+) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    let username = credentials.user_id();
+    
+    let state = req.app_data::<BasicAuthState>();
+    match state {
+        None => Ok(req),
+        Some(state) => {
+            // 没有指定用户名时
+            if state.username.is_empty() {
+                return Ok(req);
+            }
+            // 验证用户名和密码
+            if username == state.username && credentials.password().unwrap() == state.password {
+                Ok(req)
+            } else {
+                // 错误
+                Err((ErrorUnauthorized("Invalid Credential"), req))
+            }
         }
-        _user_id = parts[0];
-        _password = parts[1];
     }
+}
+
+pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
+    // 获取base url
+    let base = options.base.clone();
+
+    // 获取文件路径
+    let root_path = options.path.clone();
+    let log_path = options.log.clone();
+    let security = options.security.clone();
+
+    // let validator = |
+    //     req: ServiceRequest,
+    //     _credentials: BasicAuth,
+    // | async {
+    //     let user_id = _credentials.user_id().to_string();
+    //     let password = _credentials.password().unwrap().to_string();
+
+    //     if user_id == String::from("admin") && password == String::from("admin") {
+    //         Ok(req)
+    //     } else {
+    //         // 错误
+    //         Err((ErrorUnauthorized("Invalid Credential"), req))
+    //     }
+    // }
     let server = HttpServer::new(move || {
-        // TODO 根据gzip来判断
+        let mut _user_id = String::new();
+        let mut _password = String::new();
+        if let Some(security) = &security {
+            let parts: Vec<&str> = security.split(',').collect();
+            if parts.len() != 2 {
+                panic!("Error when parse basic auth")
+            }
+            _user_id = parts[0].to_string();
+            _password = parts[1].to_string();
+        }
         App::new()
+            .app_data(web::Data::new(BasicAuthState {
+                username: _user_id.to_string(),
+                password: _password.to_string(),
+            }))
+            .wrap(middleware::Logger::default())
             .wrap(middleware::Compress::default())
+            .wrap(HttpAuthentication::basic(basic_auth))
             // TODO basic auth 类型一直有问题
             // .wrap(HttpAuthentication::basic(move |req, credentials| async {
             //     if user_id.is_empty() {
@@ -185,7 +247,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             //         }
             //     }
             // }))
-            .service(handler)
+            .service(web::scope(&base).service(handler))
     });
 
     let host = options.host.as_str();
