@@ -1,13 +1,24 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Copy, Debug, Clone)]
+enum RunMode {
+    // 默认
+    Default,
+    // SPA模式
+    SPA,
+    // 目录列表模式
+    Index
+}
+
 
 #[derive(Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct CliOption {
     /// Force enable file index
-    #[arg(short = 'i', long, default_value_t = false)]
-    pub force_index: bool,
+    #[arg(short = 'm', long, default_value = RunMode::Default)]
+    pub mode: RunMode,
 
     /// Config file path
     #[arg(short = 'f', long, value_name = "FILE")]
