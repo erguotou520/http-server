@@ -1,7 +1,6 @@
 use actix_web::dev::ServiceRequest;
 use actix_web::error::ErrorUnauthorized;
 use actix_web_httpauth::extractors::basic::BasicAuth;
-use actix_web_httpauth::extractors::AuthenticationError;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use chrono::prelude::DateTime;
 use chrono::Local;
@@ -40,23 +39,37 @@ struct AppState {
     username: String,
     password: String,
     path: PathBuf,
-    mode: WorkMode
+    mode: WorkMode,
 }
 
 #[get("/{filename:.*}")]
 async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
     let file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    let path = req.app_data::<AppState>().unwrap().path.join(file_path);
+    let state = req.app_data::<AppState>().unwrap();
+    let path = state.path.join(file_path);
+    let mode = state.mode;
     let existed = path.try_exists().unwrap();
     if existed {
         let file = NamedFile::open(&path)?;
+        // 目录
         if file.metadata().is_dir() {
-            if let Ok(response) = auto_render_index_html(path.clone()) {
-                Ok(response.into_response(&req))
-            } else {
-                render_dir_index(path)
+            // 目录索引模式
+            if mode == WorkMode::Index {
+                return render_dir_index(&path);
             }
+            // SPA 模式
+            if mode == WorkMode::SPA {
+                // try 返回 index.html
+                if let Ok(response) = auto_render_index_html(&state.path) {
+                    return Ok(response.into_response(&req));
+                } else {
+                    return Ok(not_found_response());
+                }
+            }
+            // 默认模式 403
+            return Ok(forbidden_response());
         } else {
+            // 返回文件本身
             let response =
                 file.use_last_modified(true)
                     .set_content_disposition(ContentDisposition {
@@ -67,19 +80,34 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
         }
     } else {
         // 文件不存在
-        // 如果是 spa 模式，则返回index.html
-        if let Ok(response) = auto_render_index_html(path.clone()) {
-            Ok(response.into_response(&req))
-        } else {
-            let response = HttpResponse::NotFound()
-                .content_type("text/html; charset=utf-8")
-                .body("404");
-            Ok(response)
+        // 如果是 spa 模式
+        if mode == WorkMode::SPA {
+            // try 返回 index.html
+            if let Ok(response) = auto_render_index_html(&state.path) {
+                return Ok(response.into_response(&req));
+            } else {
+                return Ok(not_found_response());
+            }
         }
+        Ok(not_found_response())
     }
 }
 
-fn render_dir_index(path: PathBuf) -> Result<HttpResponse, Error> {
+// 403
+fn forbidden_response() -> HttpResponse {
+    return HttpResponse::Forbidden()
+        .content_type("text/html; charset=utf-8")
+        .body("403");
+}
+
+// 404
+fn not_found_response() -> HttpResponse {
+    return HttpResponse::NotFound()
+        .content_type("text/html; charset=utf-8")
+        .body("404");
+}
+
+fn render_dir_index(path: &PathBuf) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
     // 遍历目录
     for file in read_dir(&path)? {
@@ -145,7 +173,7 @@ fn format_file_size(file_size: u64) -> String {
 }
 
 // 如果路径下有index.html，则直接返回index.html
-fn auto_render_index_html(path: PathBuf) -> Result<NamedFile, bool> {
+fn auto_render_index_html(path: &PathBuf) -> Result<NamedFile, bool> {
     // 拼接 index.html 路径
     let index_path = path.join("index.html");
     if index_path.exists() {
@@ -167,7 +195,7 @@ async fn basic_auth(
     credentials: BasicAuth,
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let username = credentials.user_id();
-    
+
     let state = req.app_data::<AppState>();
     match state {
         None => Ok(req),
@@ -193,7 +221,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
 
     // 获取文件路径
     let root_path = options.path.clone();
-    let log_path = options.log.clone();
+    // let log_path = options.log.clone();
     let security = options.security.clone();
     let mode = if let Some(mode) = options.mode {
         mode

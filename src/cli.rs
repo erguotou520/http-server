@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-#[derive(clap::ValueEnum, Copy, Clone, Debug)]
+#[derive(clap::ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WorkMode {
     // 默认
     Default,
@@ -19,7 +19,7 @@ pub struct CliOption {
     pub mode: Option<WorkMode>,
 
     /// Folder to serve
-    #[arg(short = 'p', long, value_name = "PATH", default_value_t = String::from("."))]
+    #[arg(short = 'f', long, value_name = "PATH", default_value_t = String::from("."))]
     pub path: String,
 
     /// Base URL path
@@ -27,11 +27,11 @@ pub struct CliOption {
     pub base: String,
 
     /// Host to listen on
-    #[arg(short = 'h', long, value_name = "HOST", default_value_t = String::from("0.0.0.0"))]
+    #[arg(long, value_name = "HOST", default_value_t = String::from("0.0.0.0"))]
     pub host: String,
 
     /// Port to listen on
-    #[arg(short = 'p', long, value_name = "PORT", default_value_t = 8080)]
+    #[arg(long, value_name = "PORT", default_value_t = 8080)]
     pub port: u16,
 
     /// Enable gzip
