@@ -15,7 +15,7 @@ use actix_web::{get, middleware, web, App, Error, HttpRequest, HttpResponse, Htt
 use local_ip_address::list_afinet_netifas;
 use open::that;
 
-use crate::cli::CliOption;
+use crate::cli::{CliOption, WorkMode};
 
 use askama::Template;
 
@@ -36,16 +36,17 @@ struct FileItem {
     update_time: String,
 }
 
-struct BasicAuthState {
+struct AppState {
     username: String,
     password: String,
+    path: PathBuf,
+    mode: WorkMode
 }
 
 #[get("/{filename:.*}")]
 async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
-    // web::scope(path)
-    let path: PathBuf = req.match_info().query("filename").parse().unwrap();
-
+    let file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let path = req.app_data::<AppState>().unwrap().path.join(file_path);
     let existed = path.try_exists().unwrap();
     if existed {
         let file = NamedFile::open(&path)?;
@@ -65,6 +66,8 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
             Ok(response.into_response(&req))
         }
     } else {
+        // 文件不存在
+        // 如果是 spa 模式，则返回index.html
         if let Ok(response) = auto_render_index_html(path.clone()) {
             Ok(response.into_response(&req))
         } else {
@@ -159,13 +162,13 @@ fn auto_render_index_html(path: PathBuf) -> Result<NamedFile, bool> {
     Err(false)
 }
 
-pub async fn basic_auth(
+async fn basic_auth(
     req: ServiceRequest,
     credentials: BasicAuth,
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let username = credentials.user_id();
     
-    let state = req.app_data::<BasicAuthState>();
+    let state = req.app_data::<AppState>();
     match state {
         None => Ok(req),
         Some(state) => {
@@ -192,21 +195,11 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let root_path = options.path.clone();
     let log_path = options.log.clone();
     let security = options.security.clone();
-
-    // let validator = |
-    //     req: ServiceRequest,
-    //     _credentials: BasicAuth,
-    // | async {
-    //     let user_id = _credentials.user_id().to_string();
-    //     let password = _credentials.password().unwrap().to_string();
-
-    //     if user_id == String::from("admin") && password == String::from("admin") {
-    //         Ok(req)
-    //     } else {
-    //         // 错误
-    //         Err((ErrorUnauthorized("Invalid Credential"), req))
-    //     }
-    // }
+    let mode = if let Some(mode) = options.mode {
+        mode
+    } else {
+        WorkMode::Default
+    };
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();
@@ -219,9 +212,11 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             _password = parts[1].to_string();
         }
         App::new()
-            .app_data(web::Data::new(BasicAuthState {
+            .app_data(web::Data::new(AppState {
                 username: _user_id.to_string(),
                 password: _password.to_string(),
+                path: PathBuf::from(&root_path),
+                mode: mode,
             }))
             .wrap(middleware::Logger::default())
             .wrap(middleware::Compress::default())
