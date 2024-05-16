@@ -23,7 +23,7 @@ pub struct CliOption {
     pub path: String,
 
     /// Base URL path
-    #[arg(short = 'b', long, value_name = "BASE", default_value_t = String::from("/"))]
+    #[arg(short = 'b', long, value_name = "BASE", default_value_t = String::from(""))]
     pub base: String,
 
     /// Host to listen on
@@ -34,16 +34,16 @@ pub struct CliOption {
     #[arg(long, value_name = "PORT", default_value_t = 8080)]
     pub port: u16,
 
-    /// Enable gzip
-    #[arg(short = 'g', long, value_name = "GZIP", default_value_t = true)]
-    pub gzip: bool,
+    /// Enable compress
+    #[arg(short = 'c', long, value_name = "COMPRESS", action, default_value_t = true)]
+    pub compress: bool,
 
     /// Automatically open the browser
     #[arg(short = 'o', long, value_name = "open", default_value_t = false)]
     pub open: bool,
 
     /// Cache duration for static files
-    #[arg(short = 'c', long, value_name = "CACHE", default_value_t = String::from("1d"))]
+    #[arg(long, value_name = "CACHE", default_value_t = String::from("1d"))]
     pub cache: String,
 
     /// Path to save log at

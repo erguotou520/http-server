@@ -1,5 +1,6 @@
 use actix_web::dev::ServiceRequest;
 use actix_web::error::ErrorUnauthorized;
+use actix_web::middleware::Condition;
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use chrono::prelude::DateTime;
@@ -43,14 +44,13 @@ struct AppState {
 }
 
 #[get("/{filename:.*}")]
-async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
+async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     let file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    let state = req.app_data::<AppState>().unwrap();
     let path = state.path.join(file_path);
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
     if existed {
-        let file = NamedFile::open(&path)?;
+        let file = NamedFile::open_async(&path).await?;
         // 目录
         if file.metadata().is_dir() {
             // 目录索引模式
@@ -69,13 +69,10 @@ async fn handler(req: HttpRequest) -> Result<HttpResponse, Error> {
             // 默认模式 403
             return Ok(forbidden_response());
         } else {
+            // TODO cache
             // 返回文件本身
             let response =
-                file.use_last_modified(true)
-                    .set_content_disposition(ContentDisposition {
-                        disposition: DispositionType::Inline,
-                        parameters: vec![],
-                    });
+                file.prefer_utf8(true).use_etag(true).use_last_modified(true);
             Ok(response.into_response(&req))
         }
     } else {
@@ -218,6 +215,8 @@ async fn basic_auth(
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // 获取base url
     let base = options.base.clone();
+    // 是否开启压缩
+    let compress = options.compress.clone();
 
     // 获取文件路径
     let root_path = options.path.clone();
@@ -232,7 +231,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
         let mut _user_id = String::new();
         let mut _password = String::new();
         if let Some(security) = &security {
-            let parts: Vec<&str> = security.split(',').collect();
+            let parts: Vec<&str> = security.split(':').collect();
             if parts.len() != 2 {
                 panic!("Error when parse basic auth")
             }
@@ -240,37 +239,24 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             _password = parts[1].to_string();
         }
         App::new()
-            .app_data(web::Data::new(AppState {
-                username: _user_id.to_string(),
-                password: _password.to_string(),
-                path: PathBuf::from(&root_path),
-                mode: mode,
-            }))
             .wrap(middleware::Logger::default())
-            .wrap(middleware::Compress::default())
-            .wrap(HttpAuthentication::basic(basic_auth))
-            // TODO basic auth 类型一直有问题
-            // .wrap(HttpAuthentication::basic(move |req, credentials| async {
-            //     if user_id.is_empty() {
-            //         Ok(req)
-            //     } else {
-            //         if credentials.user_id().eq(user_id)
-            //             && credentials.password().unwrap().eq(password)
-            //         {
-            //             Ok(req)
-            //         } else {
-            //             let config = req
-            //                 .app_data::<Config>()
-            //                 .cloned()
-            //                 .unwrap_or_default();
-            //             Err((
-            //                 actix_web::Error::from(AuthenticationError::from(config)),
-            //                 req,
-            //             ))
-            //         }
-            //     }
-            // }))
-            .service(web::scope(&base).service(handler))
+            // TODO 大文件压缩效率、时间待优化
+            .wrap(Condition::new(compress, middleware::Compress::default()))
+            .wrap(Condition::new(
+                !_user_id.is_empty(),
+                HttpAuthentication::basic(basic_auth),
+            ))
+            // .service(handler)
+            .service(
+                web::scope(if &base == "/" {""} else {&base})
+                    .app_data(web::Data::new(AppState {
+                        username: _user_id.to_string(),
+                        password: _password.to_string(),
+                        path: PathBuf::from(&root_path),
+                        mode: mode,
+                    }))
+                    .service(handler),
+            )
     });
 
     let host = options.host.as_str();
