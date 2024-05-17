@@ -71,8 +71,10 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
         } else {
             // TODO cache
             // 返回文件本身
-            let response =
-                file.prefer_utf8(true).use_etag(true).use_last_modified(true);
+            let response = file
+                .prefer_utf8(true)
+                .use_etag(true)
+                .use_last_modified(true);
             Ok(response.into_response(&req))
         }
     } else {
@@ -215,6 +217,7 @@ async fn basic_auth(
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // 获取base url
     let base = options.base.clone();
+    let base_clone = base.clone();
     // 是否开启压缩
     let compress = options.compress.clone();
 
@@ -227,6 +230,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     } else {
         WorkMode::Default
     };
+    print!("mode: {:?}", &mode);
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();
@@ -248,7 +252,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             ))
             // .service(handler)
             .service(
-                web::scope(if &base == "/" {""} else {&base})
+                web::scope(if &base == "/" { "" } else { &base })
                     .app_data(web::Data::new(AppState {
                         username: _user_id.to_string(),
                         password: _password.to_string(),
@@ -262,29 +266,29 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let host = options.host.as_str();
 
     if let Ok(server) = server.bind((host, options.port)) {
-        print_all_host(host, options.port, options.open);
+        print_all_host(host, options.port, options.open, &base_clone);
         server.run().await
     } else {
         panic!("port {} is in use.", options.port);
     }
 }
 
-fn print_all_host(host: &str, port: u16, open: bool) {
+fn print_all_host(host: &str, port: u16, open: bool, base: &str) {
     if host.eq("0.0.0.0") {
         let ifas = list_afinet_netifas().unwrap();
 
         for (_, ip) in ifas.iter() {
             if matches!(ip, IpAddr::V4(_)) {
-                println!("  http://{:?}:{}", ip, port);
+                println!("  http://{:?}:{}{}", ip, port, base);
             }
         }
         if open && !ifas.is_empty() {
-            let _ = that(format!("http://{:?}:{}", ifas[0].1, port));
+            let _ = that(format!("http://{:?}:{}{}", ifas[0].1, port, base));
         }
     } else {
-        println!("  http://{}:{}", host, port);
+        println!("  http://{}:{}{}", host, port, base);
         if open {
-            let _ = that(format!("http://{}:{}", host, port));
+            let _ = that(format!("http://{}:{}{}", host, port, base));
         }
     }
 }
