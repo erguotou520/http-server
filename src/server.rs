@@ -48,9 +48,12 @@ struct AppState {
     custom_404_url: String,
 }
 
-#[get("/{filename:.*}")]
+#[get("{filename:.*}")]
 async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
-    let file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let _file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let prefix_url = state.base_url.clone();
+    // 去掉前缀
+    let file_path = _file_path.strip_prefix(&prefix_url).unwrap().to_path_buf();
     let path = state.path.join(&file_path);
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
@@ -60,7 +63,12 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
         if file.metadata().is_dir() {
             // 目录索引模式
             if mode == WorkMode::Index {
-                return render_dir_index(&state.base_url, &state.path, &file_path, &state.ignore_pattern);
+                return render_dir_index(
+                    &state.base_url,
+                    &state.path,
+                    &file_path,
+                    &state.ignore_pattern,
+                );
             }
             // SPA 模式
             if mode == WorkMode::SPA {
@@ -108,21 +116,29 @@ fn forbidden_response() -> HttpResponse {
 fn not_found_response(state: web::Data<AppState>) -> HttpResponse {
     let custom_404_url = state.custom_404_url.clone();
     if !custom_404_url.is_empty() {
-        return HttpResponse::MovedPermanently().insert_header((LOCATION, custom_404_url)).finish();
+        return HttpResponse::MovedPermanently()
+            .insert_header((LOCATION, custom_404_url))
+            .finish();
     }
     return HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
         .finish();
 }
 
-fn render_dir_index(base_url: &str, base_path: &PathBuf, file_path: &PathBuf, _ignore_pattern: &Regex) -> Result<HttpResponse, Error> {
+fn render_dir_index(
+    base_url: &str,
+    base_path: &PathBuf,
+    file_path: &PathBuf,
+    _ignore_pattern: &Regex,
+) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
-    
+
     // 遍历目录
     for file in read_dir(base_path.join(file_path))? {
         let file = file?;
         // 去掉base_path前缀
-        let file_path = String::from(file.path().to_str().unwrap()).replace(base_path.to_str().unwrap(), "");
+        let file_path =
+            String::from(file.path().to_str().unwrap()).replace(base_path.to_str().unwrap(), "");
         let name = String::from(file.file_name().to_str().unwrap());
         // TODO 是否需要忽略该文件？
         // if ignore_pattern.is_match(&name).is_ok() {
@@ -162,7 +178,11 @@ fn render_dir_index(base_url: &str, base_path: &PathBuf, file_path: &PathBuf, _i
     });
 
     // 路径按照/分隔
-    let path_list: Vec<String> = file_path.to_string_lossy().split("/").map(|s| s.to_string()).collect();
+    let path_list: Vec<String> = file_path
+        .to_string_lossy()
+        .split("/")
+        .map(|s| s.to_string())
+        .collect();
     let parent_path = file_path.parent();
     // 渲染页面
     let html = ListTemplate {
@@ -177,10 +197,8 @@ fn render_dir_index(base_url: &str, base_path: &PathBuf, file_path: &PathBuf, _i
                 } else {
                     String::from(p.to_str().unwrap())
                 }
-            },
-            None => {
-                String::from("")
             }
+            None => String::from(""),
         },
         files,
     }
@@ -250,9 +268,19 @@ async fn basic_auth(
 }
 
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
-    // 获取base url
-    let base = options.base.clone();
-    let base_clone = base.clone();
+    // 获取base url，移除开头的/和结尾的/
+    let mut base = options.base.clone();
+    if base.starts_with("/") {
+        base.remove(0);
+    }
+    if base.ends_with("/") {
+        base.pop();
+    }
+    // 构建base url，没有前置/的添加
+    let mut base_url: String = base.clone();
+    if !base_url.starts_with("/") {
+        base_url = format!("/{}", base_url);
+    }
     // 是否开启压缩
     let compress = options.compress.clone();
 
@@ -265,7 +293,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let ignore_pattern = Regex::new(&options.ignore_files).unwrap();
     let custom_404_url: String = if let Some(url) = &options.custom_404 {
         url.to_string()
-    } else{
+    } else {
         String::from("")
     };
     let server = HttpServer::new(move || {
@@ -287,26 +315,28 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 !_user_id.is_empty(),
                 HttpAuthentication::basic(basic_auth),
             ))
+            // 使用actix-web的scope有问题，无法响应 /，只能响应子路由，所以手动处理
             // .service(handler)
-            .service(
-                web::scope(if &base == "/" { "" } else { &base })
-                    .app_data(web::Data::new(AppState {
-                        base_url: base.clone(),
-                        username: _user_id.to_string(),
-                        password: _password.to_string(),
-                        path: PathBuf::from(&root_path),
-                        mode,
-                        ignore_pattern: ignore_pattern.clone(),
-                        custom_404_url: custom_404_url.clone(),
-                    }))
-                    .service(handler),
-            )
+            // .service(
+            //     web::scope(if &base == "/" { "" } else { &base })
+            .app_data(
+                web::Data::new(AppState {
+                    base_url: base.clone(),
+                    username: _user_id.to_string(),
+                    password: _password.to_string(),
+                    path: PathBuf::from(&root_path),
+                    mode,
+                    ignore_pattern: ignore_pattern.clone(),
+                    custom_404_url: custom_404_url.clone(),
+                }))
+                .service(handler)
+            // )
     });
 
     let host = options.host.as_str();
 
     if let Ok(server) = server.bind((host, options.port)) {
-        print_all_host(host, options.port, options.open, &base_clone);
+        print_all_host(host, options.port, options.open, &base_url);
         server.run().await
     } else {
         panic!("port {} is in use.", options.port);
