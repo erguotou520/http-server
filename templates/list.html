@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{path}}</title>
+  <base href="{{base_url}}" />
+  <title>{{current_path}}</title>
   <style>
   body {
     margin: 0;
@@ -51,6 +52,9 @@
   .size {
     color: var(--minor-text-color);
   }
+  .nav {
+    padding: 0 2px;
+  }
   footer {
     margin-top: 10em;
     font-style: italic;
@@ -59,8 +63,10 @@
   </style>
 </head>
 <body>
-  <h2>Index of {% for path in path_list -%}
-    <a class="normal" href="{% for p in 0..(path_list.len() - loop.index0 - 1) %}/{{path_list[loop.index0]}}{% endfor %}">{{path}}</a><span style="margin:0 2px;">{% if !loop.last %}/{% endif %}</span>{% endfor -%}
+  <h2>Index of <a href="/" class="nav">/</a>{% for path in path_list -%}
+    <a class="nav" href="{% for p in 0..(loop.index0 + 1) %}/{{path_list[loop.index0]}}{% endfor %}">{{path}}</a>
+    {% if !loop.last -%}<span class="nav">/</span>{% endif -%}
+    {% endfor -%}
   </h2>
   <table>
     <thead>
@@ -69,13 +75,20 @@
       <th style="width:20%;min-width: 80px;">size</th>
     </thead>
     <tbody>
-      <tr>
-        <td colspan="3"><a href="/{{parent_path}}">../</a></td>
+      {% if !parent_path.is_empty() -%}<tr>
+        <td colspan="3">
+          {% if parent_path == "/" -%}
+          <a href="/">../</a>
+          {% else -%}
+          <a href="/{{parent_path}}">../</a>
+          {% endif -%}
+        </td>
       </tr>
+      {% endif -%}
       {% for file in files -%}
       <tr>
         <td>
-          <a href="/{{file.path}}">
+          <a href="{{file.path}}">
             {{file.name}}{% if file.is_dir %}/{% endif %}
           </a>
         </td>

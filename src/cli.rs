@@ -15,8 +15,8 @@ pub enum WorkMode {
 #[command(author, version, about, long_about = None)]
 pub struct CliOption {
     /// Work mode
-    #[arg(short = 'm', long)]
-    pub mode: Option<WorkMode>,
+    #[arg(short = 'm', long, value_enum, default_value_t = WorkMode::Index)]
+    pub mode: WorkMode,
 
     /// Folder to serve
     #[arg(short = 'f', long, value_name = "PATH", default_value_t = String::from("."))]
@@ -61,6 +61,18 @@ pub struct CliOption {
     /// Set username:password for basic auth
     #[arg(short = 's', long, value_name = "SECURITY")]
     pub security: Option<String>,
+
+    /// Custom 404 page url, eg: /404.html
+    #[arg(long, value_name = "CUSTOM_404")]
+    pub custom_404: Option<String>,
+
+    /// Set proxy for requests, eg: /api->http://127.0.0.1:8080
+    #[arg(short = 'P', long, value_name = "PROXY", num_args(0..))]
+    pub proxies: Vec<String>,
+
+    /// files to ignore, support regex
+    #[arg(long, value_name = "IGNORE_FILES", default_value_t = String::from(""))]
+    pub ignore_files: String,
 
     #[command(subcommand)]
     pub command: Option<Commands>,

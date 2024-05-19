@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": ["-f", "examples/dist", "-b", "/app", "--host", "127.0.0.1", "--port", "9999", "-o", "-s", "username:password"],
+      "args": ["-f", "examples/dist", "-m", "index"],
       "cwd": "${workspaceFolder}"
     },
     {

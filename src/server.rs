@@ -5,6 +5,7 @@ use actix_web_httpauth::extractors::basic::BasicAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use chrono::prelude::DateTime;
 use chrono::Local;
+use fancy_regex::Regex;
 use std::fs::read_dir;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -22,7 +23,8 @@ use askama::Template;
 #[derive(Template)]
 #[template(path = "list.html")]
 struct ListTemplate {
-    path: String,
+    base_url: String,
+    current_path: String,
     path_list: Vec<String>,
     parent_path: String,
     files: Vec<FileItem>,
@@ -37,16 +39,18 @@ struct FileItem {
 }
 
 struct AppState {
+    base_url: String,
     username: String,
     password: String,
     path: PathBuf,
     mode: WorkMode,
+    ignore_pattern: Regex,
 }
 
 #[get("/{filename:.*}")]
 async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     let file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    let path = state.path.join(file_path);
+    let path = state.path.join(&file_path);
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
     if existed {
@@ -55,7 +59,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
         if file.metadata().is_dir() {
             // 目录索引模式
             if mode == WorkMode::Index {
-                return render_dir_index(&path);
+                return render_dir_index(&state.base_url, &state.path, &file_path, &state.ignore_pattern);
             }
             // SPA 模式
             if mode == WorkMode::SPA {
@@ -96,23 +100,29 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
 fn forbidden_response() -> HttpResponse {
     return HttpResponse::Forbidden()
         .content_type("text/html; charset=utf-8")
-        .body("403");
+        .finish();
 }
 
 // 404
 fn not_found_response() -> HttpResponse {
     return HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
-        .body("404");
+        .finish();
 }
 
-fn render_dir_index(path: &PathBuf) -> Result<HttpResponse, Error> {
+fn render_dir_index(base_url: &str, base_path: &PathBuf, file_path: &PathBuf, _ignore_pattern: &Regex) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
+    
     // 遍历目录
-    for file in read_dir(&path)? {
+    for file in read_dir(base_path.join(file_path))? {
         let file = file?;
-        let file_path = String::from(file.path().to_str().unwrap());
+        // 去掉base_path前缀
+        let file_path = String::from(file.path().to_str().unwrap()).replace(base_path.to_str().unwrap(), "");
         let name = String::from(file.file_name().to_str().unwrap());
+        // TODO 是否需要忽略该文件？
+        // if ignore_pattern.is_match(&name).is_ok() {
+        //     continue;
+        // }
         let modified = file.metadata()?.modified()?;
         let modified_local: DateTime<Local> = modified.into();
         let update_time = modified_local.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -134,19 +144,39 @@ fn render_dir_index(path: &PathBuf) -> Result<HttpResponse, Error> {
             })
         }
     }
-    // 全路径
-    let full_path = String::from(path.to_str().unwrap());
-    // 路径按照/分隔
-    let path_list: Vec<String> = full_path.split("/").map(|s| s.to_string()).collect();
-    // 上级路径
-    let mut parent_list = path_list.clone();
-    parent_list.pop();
 
+    // 排序，目录在前，文件在后
+    files.sort_by(|a, b| {
+        if a.is_dir && !b.is_dir {
+            std::cmp::Ordering::Less
+        } else if !a.is_dir && b.is_dir {
+            std::cmp::Ordering::Greater
+        } else {
+            a.name.cmp(&b.name)
+        }
+    });
+
+    // 路径按照/分隔
+    let path_list: Vec<String> = file_path.to_string_lossy().split("/").map(|s| s.to_string()).collect();
+    let parent_path = file_path.parent();
     // 渲染页面
     let html = ListTemplate {
-        path: full_path.clone(),
+        base_url: base_url.to_string(),
+        // 去掉最后一个/
+        current_path: String::from(file_path.to_str().unwrap()),
         path_list,
-        parent_path: parent_list.join("/"),
+        parent_path: match parent_path {
+            Some(p) => {
+                if p.to_str().unwrap().is_empty() {
+                    String::from("/")
+                } else {
+                    String::from(p.to_str().unwrap())
+                }
+            },
+            None => {
+                String::from("")
+            }
+        },
         files,
     }
     .render()
@@ -225,12 +255,9 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let root_path = options.path.clone();
     // let log_path = options.log.clone();
     let security = options.security.clone();
-    let mode = if let Some(mode) = options.mode {
-        mode
-    } else {
-        WorkMode::Default
-    };
-    print!("mode: {:?}", &mode);
+    let mode = options.mode;
+    // 要忽略的文件
+    let ignore_pattern = Regex::new(&options.ignore_files).unwrap();
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();
@@ -254,10 +281,12 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             .service(
                 web::scope(if &base == "/" { "" } else { &base })
                     .app_data(web::Data::new(AppState {
+                        base_url: base.clone(),
                         username: _user_id.to_string(),
                         password: _password.to_string(),
                         path: PathBuf::from(&root_path),
-                        mode: mode,
+                        mode,
+                        ignore_pattern: ignore_pattern.clone(),
                     }))
                     .service(handler),
             )
