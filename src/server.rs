@@ -11,7 +11,7 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 
 use actix_files::NamedFile;
-use actix_web::http::header::{ContentDisposition, DispositionType};
+use actix_web::http::header::{ContentDisposition, DispositionType, LOCATION};
 use actix_web::{get, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use local_ip_address::list_afinet_netifas;
 use open::that;
@@ -45,6 +45,7 @@ struct AppState {
     path: PathBuf,
     mode: WorkMode,
     ignore_pattern: Regex,
+    custom_404_url: String,
 }
 
 #[get("/{filename:.*}")]
@@ -67,7 +68,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
                 if let Ok(response) = auto_render_index_html(&state.path) {
                     return Ok(response.into_response(&req));
                 } else {
-                    return Ok(not_found_response());
+                    return Ok(not_found_response(state));
                 }
             }
             // 默认模式 403
@@ -89,10 +90,10 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             if let Ok(response) = auto_render_index_html(&state.path) {
                 return Ok(response.into_response(&req));
             } else {
-                return Ok(not_found_response());
+                return Ok(not_found_response(state));
             }
         }
-        Ok(not_found_response())
+        Ok(not_found_response(state))
     }
 }
 
@@ -104,7 +105,11 @@ fn forbidden_response() -> HttpResponse {
 }
 
 // 404
-fn not_found_response() -> HttpResponse {
+fn not_found_response(state: web::Data<AppState>) -> HttpResponse {
+    let custom_404_url = state.custom_404_url.clone();
+    if !custom_404_url.is_empty() {
+        return HttpResponse::MovedPermanently().insert_header((LOCATION, custom_404_url)).finish();
+    }
     return HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
         .finish();
@@ -258,6 +263,11 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let mode = options.mode;
     // 要忽略的文件
     let ignore_pattern = Regex::new(&options.ignore_files).unwrap();
+    let custom_404_url: String = if let Some(url) = &options.custom_404 {
+        url.to_string()
+    } else{
+        String::from("")
+    };
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();
@@ -287,6 +297,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                         path: PathBuf::from(&root_path),
                         mode,
                         ignore_pattern: ignore_pattern.clone(),
+                        custom_404_url: custom_404_url.clone(),
                     }))
                     .service(handler),
             )

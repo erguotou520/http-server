@@ -62,8 +62,8 @@ pub struct CliOption {
     #[arg(short = 's', long, value_name = "SECURITY")]
     pub security: Option<String>,
 
-    /// Custom 404 page url, eg: /404.html
-    #[arg(long, value_name = "CUSTOM_404")]
+    /// Custom 404 page url, eg: 404.html
+    #[arg(long, value_name = "CUSTOM-404")]
     pub custom_404: Option<String>,
 
     /// Set proxy for requests, eg: /api->http://127.0.0.1:8080
@@ -71,7 +71,7 @@ pub struct CliOption {
     pub proxies: Vec<String>,
 
     /// files to ignore, support regex
-    #[arg(long, value_name = "IGNORE_FILES", default_value_t = String::from(""))]
+    #[arg(long, value_name = "IGNORE-FILES", default_value_t = String::from(""))]
     pub ignore_files: String,
 
     #[command(subcommand)]
