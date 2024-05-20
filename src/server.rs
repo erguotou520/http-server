@@ -53,11 +53,23 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
     let _file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
     let prefix_url = state.base_url.clone();
     // 去掉前缀
-    let file_path = _file_path.strip_prefix(&prefix_url).unwrap().to_path_buf();
+    let _remove_prefix = _file_path.strip_prefix(&prefix_url);
+    let file_path = if let Ok(path) = _remove_prefix {
+        path.to_path_buf()
+    } else {
+        _file_path.to_path_buf()
+    };
     // 对于忽略文件要屏蔽
     if !file_path.starts_with(".well-known") {
-        if let Ok(_) = &state.ignore_pattern.is_match(&file_path.to_str().unwrap()) {
-            return Ok(not_found_response(state));
+        println!(
+            "file_path: {}, {}",
+            file_path.to_str().unwrap(),
+            &state.ignore_pattern
+        );
+        if let Ok(_match) = state.ignore_pattern.is_match(&file_path.to_str().unwrap()) {
+            if _match {
+                return Ok(not_found_response(state));
+            }
         }
     }
     let path = state.path.join(&file_path);
@@ -148,8 +160,10 @@ fn render_dir_index(
         let name = String::from(file.file_name().to_str().unwrap());
         // 忽略隐藏文件
         if !&name.starts_with(".well-known") {
-            if let Ok(_) = ignore_pattern.is_match(&name) {
-                continue;
+            if let Ok(_match) = ignore_pattern.is_match(&name) {
+                if _match {
+                    continue;
+                }
             }
         }
         let modified = file.metadata()?.modified()?;
@@ -327,18 +341,17 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             // .service(handler)
             // .service(
             //     web::scope(if &base == "/" { "" } else { &base })
-            .app_data(
-                web::Data::new(AppState {
-                    base_url: base.clone(),
-                    username: _user_id.to_string(),
-                    password: _password.to_string(),
-                    path: PathBuf::from(&root_path),
-                    mode,
-                    ignore_pattern: ignore_pattern.clone(),
-                    custom_404_url: custom_404_url.clone(),
-                }))
-                .service(handler)
-            // )
+            .app_data(web::Data::new(AppState {
+                base_url: base.clone(),
+                username: _user_id.to_string(),
+                password: _password.to_string(),
+                path: PathBuf::from(&root_path),
+                mode,
+                ignore_pattern: ignore_pattern.clone(),
+                custom_404_url: custom_404_url.clone(),
+            }))
+            .service(handler)
+        // )
     });
 
     let host = options.host.as_str();
