@@ -7,9 +7,8 @@ pub enum WorkMode {
     // SPA模式
     SPA,
     // 目录列表模式
-    Index
+    Index,
 }
-
 
 #[derive(Parser, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -35,7 +34,13 @@ pub struct CliOption {
     pub port: u16,
 
     /// Enable compress
-    #[arg(short = 'c', long, value_name = "COMPRESS", action, default_value_t = true)]
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "COMPRESS",
+        action,
+        default_value_t = true
+    )]
     pub compress: bool,
 
     /// Automatically open the browser
@@ -43,8 +48,8 @@ pub struct CliOption {
     pub open: bool,
 
     /// Cache duration for static files
-    #[arg(long, value_name = "CACHE", default_value_t = String::from("1d"))]
-    pub cache: String,
+    #[arg(long, value_name = "CACHE", default_value_t = true)]
+    pub cache: bool,
 
     /// Path to save log at
     #[arg(long, value_name = "LOG")]

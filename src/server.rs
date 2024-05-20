@@ -44,6 +44,7 @@ struct AppState {
     password: String,
     path: PathBuf,
     mode: WorkMode,
+    cache: bool,
     ignore_pattern: Regex,
     custom_404_url: String,
 }
@@ -61,11 +62,6 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
     };
     // 对于忽略文件要屏蔽
     if !file_path.starts_with(".well-known") {
-        println!(
-            "file_path: {}, {}",
-            file_path.to_str().unwrap(),
-            &state.ignore_pattern
-        );
         if let Ok(_match) = state.ignore_pattern.is_match(&file_path.to_str().unwrap()) {
             if _match {
                 return Ok(not_found_response(state));
@@ -100,12 +96,12 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             // 默认模式 403
             return Ok(forbidden_response());
         } else {
-            // TODO cache
             // 返回文件本身
-            let response = file
-                .prefer_utf8(true)
-                .use_etag(true)
-                .use_last_modified(true);
+            let mut response = file
+                .prefer_utf8(true);
+            if state.cache {
+                response = response.use_etag(true).use_last_modified(true);
+            }
             Ok(response.into_response(&req))
         }
     } else {
@@ -305,6 +301,8 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     }
     // 是否开启压缩
     let compress = options.compress.clone();
+    // 是否开启cache
+    let cache = options.cache.clone();
 
     // 获取文件路径
     let root_path = options.path.clone();
@@ -347,6 +345,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 password: _password.to_string(),
                 path: PathBuf::from(&root_path),
                 mode,
+                cache,
                 ignore_pattern: ignore_pattern.clone(),
                 custom_404_url: custom_404_url.clone(),
             }))
