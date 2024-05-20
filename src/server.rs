@@ -54,6 +54,12 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
     let prefix_url = state.base_url.clone();
     // 去掉前缀
     let file_path = _file_path.strip_prefix(&prefix_url).unwrap().to_path_buf();
+    // 对于忽略文件要屏蔽
+    if !file_path.starts_with(".well-known") {
+        if let Ok(_) = &state.ignore_pattern.is_match(&file_path.to_str().unwrap()) {
+            return Ok(not_found_response(state));
+        }
+    }
     let path = state.path.join(&file_path);
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
@@ -129,7 +135,7 @@ fn render_dir_index(
     base_url: &str,
     base_path: &PathBuf,
     file_path: &PathBuf,
-    _ignore_pattern: &Regex,
+    ignore_pattern: &Regex,
 ) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
 
@@ -140,10 +146,12 @@ fn render_dir_index(
         let file_path =
             String::from(file.path().to_str().unwrap()).replace(base_path.to_str().unwrap(), "");
         let name = String::from(file.file_name().to_str().unwrap());
-        // TODO 是否需要忽略该文件？
-        // if ignore_pattern.is_match(&name).is_ok() {
-        //     continue;
-        // }
+        // 忽略隐藏文件
+        if !&name.starts_with(".well-known") {
+            if let Ok(_) = ignore_pattern.is_match(&name) {
+                continue;
+            }
+        }
         let modified = file.metadata()?.modified()?;
         let modified_local: DateTime<Local> = modified.into();
         let update_time = modified_local.format("%Y-%m-%d %H:%M:%S").to_string();

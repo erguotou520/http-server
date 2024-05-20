@@ -71,7 +71,7 @@ pub struct CliOption {
     pub proxies: Vec<String>,
 
     /// files to ignore, support regex
-    #[arg(long, value_name = "IGNORE-FILES", default_value_t = String::from(""))]
+    #[arg(long, value_name = "IGNORE-FILES", default_value_t = String::from(r"^\."))]
     pub ignore_files: String,
 
     #[command(subcommand)]
