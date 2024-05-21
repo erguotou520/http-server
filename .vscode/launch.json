@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": ["-f", "examples/dist", "-m", "index"],
+      "args": ["-f", "examples/dist", "-m", "index", "--custom-404", "/404.html"],
       "cwd": "${workspaceFolder}"
     },
     {

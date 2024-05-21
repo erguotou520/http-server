@@ -1,17 +1,19 @@
-use actix_web::dev::ServiceRequest;
+use actix_web::dev::{Service, ServiceRequest};
 use actix_web::error::ErrorUnauthorized;
 use actix_web::middleware::Condition;
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use chrono::prelude::DateTime;
 use chrono::Local;
+use env_logger::Env;
 use fancy_regex::Regex;
 use std::fs::read_dir;
+use std::io::Read;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
 use actix_files::NamedFile;
-use actix_web::http::header::{ContentDisposition, DispositionType, LOCATION};
+use actix_web::http::header::{self, ContentDisposition, DispositionType};
 use actix_web::{get, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use local_ip_address::list_afinet_netifas;
 use open::that;
@@ -97,8 +99,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             return Ok(forbidden_response());
         } else {
             // 返回文件本身
-            let mut response = file
-                .prefer_utf8(true);
+            let mut response = file.prefer_utf8(true);
             if state.cache {
                 response = response.use_etag(true).use_last_modified(true);
             }
@@ -130,9 +131,14 @@ fn forbidden_response() -> HttpResponse {
 fn not_found_response(state: web::Data<AppState>) -> HttpResponse {
     let custom_404_url = state.custom_404_url.clone();
     if !custom_404_url.is_empty() {
-        return HttpResponse::MovedPermanently()
-            .insert_header((LOCATION, custom_404_url))
-            .finish();
+        let _404_path = state.path.join(custom_404_url);
+        if _404_path.exists() {
+            let file = NamedFile::open(&_404_path).unwrap();
+            let mut response = file.prefer_utf8(true);
+            let mut buf = String::new();
+            let _ = response.read_to_string(&mut buf);
+            return HttpResponse::NotFound().body(buf);
+        }
     }
     return HttpResponse::NotFound()
         .content_type("text/html; charset=utf-8")
@@ -312,10 +318,18 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // 要忽略的文件
     let ignore_pattern = Regex::new(&options.ignore_files).unwrap();
     let custom_404_url: String = if let Some(url) = &options.custom_404 {
-        url.to_string()
+        let mut _url = url.to_string();
+        if _url.starts_with("/") {
+            _url = _url.strip_prefix("/").unwrap().to_string();
+        }
+        if _url.ends_with("/") {
+            _url = _url.strip_suffix("/").unwrap().to_string();
+        }
+        _url
     } else {
         String::from("")
     };
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();
@@ -335,6 +349,17 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 !_user_id.is_empty(),
                 HttpAuthentication::basic(basic_auth),
             ))
+            // .wrap_fn(|req, srv| {
+            //     let fut = srv.call(req);
+            //     async {
+            //         let mut res = fut.await?;
+            //         res.headers_mut().insert(
+            //             header::HeaderName::from_static("X-Powered-By"),
+            //             header::HeaderValue::from_str(format!("hs {}", env!("CARGO_PKG_VERSION")).as_str()).unwrap(),
+            //         );
+            //         Ok(res)
+            //     }
+            // })
             // 使用actix-web的scope有问题，无法响应 /，只能响应子路由，所以手动处理
             // .service(handler)
             // .service(
