@@ -11,6 +11,7 @@ use std::fs::read_dir;
 use std::io::Read;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use actix_files::NamedFile;
 use actix_web::http::header::{self, ContentDisposition, DispositionType};
@@ -309,6 +310,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let compress = options.compress.clone();
     // 是否开启cache
     let cache = options.cache.clone();
+    let disable_powered_by = options.disable_powered_by;
 
     // 获取文件路径
     let root_path = options.path.clone();
@@ -343,23 +345,29 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
         }
         App::new()
             .wrap(middleware::Logger::default())
-            // TODO 大文件压缩效率、时间待优化
             .wrap(Condition::new(compress, middleware::Compress::default()))
             .wrap(Condition::new(
                 !_user_id.is_empty(),
                 HttpAuthentication::basic(basic_auth),
             ))
-            // .wrap_fn(|req, srv| {
-            //     let fut = srv.call(req);
-            //     async {
-            //         let mut res = fut.await?;
-            //         res.headers_mut().insert(
-            //             header::HeaderName::from_static("X-Powered-By"),
-            //             header::HeaderValue::from_str(format!("hs {}", env!("CARGO_PKG_VERSION")).as_str()).unwrap(),
-            //         );
-            //         Ok(res)
-            //     }
-            // })
+            .wrap_fn(move |req: ServiceRequest, srv| {
+                let fut = srv.call(req);
+                async move {
+                    let mut res = fut.await?;
+                    if disable_powered_by {
+                        return Ok(res);
+                    }
+                    let headers = res.headers_mut();
+                    headers.append(
+                        header::HeaderName::from_str("X-Powered-By").unwrap(),
+                        header::HeaderValue::from_str(
+                            format!("hs {}", env!("CARGO_PKG_VERSION")).as_str(),
+                        )
+                        .unwrap(),
+                    );
+                    Ok(res)
+                }
+            })
             // 使用actix-web的scope有问题，无法响应 /，只能响应子路由，所以手动处理
             // .service(handler)
             // .service(

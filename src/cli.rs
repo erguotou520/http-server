@@ -79,6 +79,9 @@ pub struct CliOption {
     #[arg(long, value_name = "IGNORE-FILES", default_value_t = String::from(r"^\."))]
     pub ignore_files: String,
 
+    #[arg(long, value_name = "DISABLE-POWERED-BY", default_value_t = true)]
+    pub disable_powered_by: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
