@@ -26,6 +26,11 @@ use crate::cli::{CliOption, WorkMode};
 
 use askama::Template;
 
+struct ProxyItem {
+    origin_path: String,
+    target_url: String,
+}
+
 #[derive(Template)]
 #[template(path = "list.html")]
 struct ListTemplate {
@@ -357,6 +362,11 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     } else {
         String::from("")
     };
+    // 反向代理
+    let proxies: Vec<ProxyItem> = options.proxies.iter().map(|item | {
+        let s: Vec<&str> = item.split("->").collect();
+        return ProxyItem{origin_path: s[0].to_string(), target_url: s[1].to_string()}
+    }).collect();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
@@ -410,9 +420,8 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 custom_404_url: custom_404_url.clone(),
                 enable_upload,
             }))
-            .service(handler)
             .service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
-        // )
+            .service(handler)
     });
 
     let host = options.host.as_str();
