@@ -61,6 +61,37 @@
     color: var(--minor-text-color);
   }
   </style>
+  {% if enable_upload -%}
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // 开启body允许拖动上传
+      document.body.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      });
+      document.body.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var files = e.dataTransfer.files;
+        if (confirm('Upload these files?')) {
+          // upload files to /{base_url}/upload, multiple files can be uploaded at the same time
+          var formData = new FormData();
+          for (var i = 0; i < files.length; i++) {
+            formData.append('files', files[i],  files[i].name);
+          }
+          formData.append('path', '{{current_path}}');
+          fetch('{{base_url}}/_upload', {
+            method: 'POST',
+            body: formData,
+          }).then(function(resp) {
+            if (resp.ok) {
+              location.reload();
+            }
+          })
+        }
+      })
+    })
+  </script>
+  {% endif -%}
 </head>
 <body>
   <h2>Index of <a href="/" class="nav">/</a>{% for path in path_list -%}

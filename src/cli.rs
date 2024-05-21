@@ -59,7 +59,7 @@ pub struct CliOption {
     #[arg(long, value_name = "ERROR_LOG")]
     pub error_log: Option<String>,
 
-    /// Enable upload
+    /// Enable upload, recommend to enable this in Index mode
     #[arg(short = 'u', long, value_name = "UPLOAD", default_value_t = false)]
     pub upload: bool,
 

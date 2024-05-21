@@ -14,8 +14,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use actix_files::NamedFile;
+use actix_multipart::form::{tempfile::TempFile, MultipartForm};
 use actix_web::http::header::{self, ContentDisposition, DispositionType};
-use actix_web::{get, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{
+    get, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder
+};
 use local_ip_address::list_afinet_netifas;
 use open::that;
 
@@ -31,6 +34,7 @@ struct ListTemplate {
     path_list: Vec<String>,
     parent_path: String,
     files: Vec<FileItem>,
+    enable_upload: bool,
 }
 
 struct FileItem {
@@ -45,11 +49,29 @@ struct AppState {
     base_url: String,
     username: String,
     password: String,
-    path: PathBuf,
+    root_path: PathBuf,
     mode: WorkMode,
     cache: bool,
     ignore_pattern: Regex,
     custom_404_url: String,
+    enable_upload: bool,
+}
+
+#[derive(Debug, MultipartForm)]
+struct UploadForm {
+    #[multipart(rename = "files")]
+    files: Vec<TempFile>,
+    path: actix_multipart::form::text::Text<String>,
+}
+
+#[post("/_upload")]
+async fn upload(MultipartForm(form): MultipartForm<UploadForm>, state: web::Data<AppState>) -> Result<impl Responder, Error> {
+    for f in form.files {
+        let path = PathBuf::from(state.root_path.clone()).join(form.path.clone()).join(f.file_name.unwrap());
+        f.file.persist(path).unwrap();
+    }
+
+    Ok(HttpResponse::Ok())
 }
 
 #[get("{filename:.*}")]
@@ -71,7 +93,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             }
         }
     }
-    let path = state.path.join(&file_path);
+    let path = state.root_path.join(&file_path);
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
     if existed {
@@ -82,15 +104,16 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             if mode == WorkMode::Index {
                 return render_dir_index(
                     &state.base_url,
-                    &state.path,
+                    &state.root_path,
                     &file_path,
                     &state.ignore_pattern,
+                    state.enable_upload,
                 );
             }
             // SPA 模式
             if mode == WorkMode::SPA {
                 // try 返回 index.html
-                if let Ok(response) = auto_render_index_html(&state.path) {
+                if let Ok(response) = auto_render_index_html(&state.root_path) {
                     return Ok(response.into_response(&req));
                 } else {
                     return Ok(not_found_response(state));
@@ -111,7 +134,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
         // 如果是 spa 模式
         if mode == WorkMode::SPA {
             // try 返回 index.html
-            if let Ok(response) = auto_render_index_html(&state.path) {
+            if let Ok(response) = auto_render_index_html(&state.root_path) {
                 return Ok(response.into_response(&req));
             } else {
                 return Ok(not_found_response(state));
@@ -132,7 +155,7 @@ fn forbidden_response() -> HttpResponse {
 fn not_found_response(state: web::Data<AppState>) -> HttpResponse {
     let custom_404_url = state.custom_404_url.clone();
     if !custom_404_url.is_empty() {
-        let _404_path = state.path.join(custom_404_url);
+        let _404_path = state.root_path.join(custom_404_url);
         if _404_path.exists() {
             let file = NamedFile::open(&_404_path).unwrap();
             let mut response = file.prefer_utf8(true);
@@ -151,6 +174,7 @@ fn render_dir_index(
     base_path: &PathBuf,
     file_path: &PathBuf,
     ignore_pattern: &Regex,
+    enable_upload: bool,
 ) -> Result<HttpResponse, Error> {
     let mut files: Vec<FileItem> = vec![];
 
@@ -226,6 +250,7 @@ fn render_dir_index(
             None => String::from(""),
         },
         files,
+        enable_upload,
     }
     .render()
     .unwrap();
@@ -311,7 +336,8 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // 是否开启cache
     let cache = options.cache.clone();
     let disable_powered_by = options.disable_powered_by;
-
+    // 是否开启上传
+    let enable_upload = options.upload.clone();
     // 获取文件路径
     let root_path = options.path.clone();
     // let log_path = options.log.clone();
@@ -350,6 +376,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 !_user_id.is_empty(),
                 HttpAuthentication::basic(basic_auth),
             ))
+            // TODO 改成Condition::new，但是类型太复杂
             .wrap_fn(move |req: ServiceRequest, srv| {
                 let fut = srv.call(req);
                 async move {
@@ -376,13 +403,15 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 base_url: base.clone(),
                 username: _user_id.to_string(),
                 password: _password.to_string(),
-                path: PathBuf::from(&root_path),
+                root_path: PathBuf::from(&root_path),
                 mode,
                 cache,
                 ignore_pattern: ignore_pattern.clone(),
                 custom_404_url: custom_404_url.clone(),
+                enable_upload,
             }))
             .service(handler)
+            .service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
         // )
     });
 
