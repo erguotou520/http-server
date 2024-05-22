@@ -17,15 +17,17 @@ use actix_files::NamedFile;
 use actix_multipart::form::{tempfile::TempFile, MultipartForm};
 use actix_web::http::header::{self, ContentDisposition, DispositionType};
 use actix_web::{
-    get, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder
+    get, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use local_ip_address::list_afinet_netifas;
 use open::that;
 
 use crate::cli::{CliOption, WorkMode};
+use crate::proxy::forward_request;
 
 use askama::Template;
 
+#[derive(Clone)]
 struct ProxyItem {
     origin_path: String,
     target_url: String,
@@ -70,9 +72,14 @@ struct UploadForm {
 }
 
 #[post("/_upload")]
-async fn upload(MultipartForm(form): MultipartForm<UploadForm>, state: web::Data<AppState>) -> Result<impl Responder, Error> {
+async fn upload(
+    MultipartForm(form): MultipartForm<UploadForm>,
+    state: web::Data<AppState>,
+) -> Result<impl Responder, Error> {
     for f in form.files {
-        let path = PathBuf::from(state.root_path.clone()).join(form.path.clone()).join(f.file_name.unwrap());
+        let path = PathBuf::from(state.root_path.clone())
+            .join(form.path.clone())
+            .join(f.file_name.unwrap());
         f.file.persist(path).unwrap();
     }
 
@@ -363,10 +370,17 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
         String::from("")
     };
     // 反向代理
-    let proxies: Vec<ProxyItem> = options.proxies.iter().map(|item | {
-        let s: Vec<&str> = item.split("->").collect();
-        return ProxyItem{origin_path: s[0].to_string(), target_url: s[1].to_string()}
-    }).collect();
+    let proxies: Vec<ProxyItem> = options
+        .proxies
+        .iter()
+        .map(|item| {
+            let s: Vec<&str> = item.split("->").collect();
+            return ProxyItem {
+                origin_path: s[0].to_string(),
+                target_url: s[1].to_string(),
+            };
+        })
+        .collect();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
@@ -379,7 +393,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             _user_id = parts[0].to_string();
             _password = parts[1].to_string();
         }
-        App::new()
+        let mut app = App::new()
             .wrap(middleware::Logger::default())
             .wrap(Condition::new(compress, middleware::Compress::default()))
             .wrap(Condition::new(
@@ -420,8 +434,21 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 custom_404_url: custom_404_url.clone(),
                 enable_upload,
             }))
-            .service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
-            .service(handler)
+            .service(handler);
+        // 上传
+        if enable_upload {
+            app = app.service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
+        }
+        // 反向代理
+        for proxy in &proxies {
+            let _proxy = proxy.clone();
+            app = app.service(
+                web::scope(&_proxy.origin_path)
+                    .app_data(web::Data::new(_proxy.target_url))
+                    .default_service(web::to(forward_request)),
+            );
+        }
+        return app;
     });
 
     let host = options.host.as_str();
