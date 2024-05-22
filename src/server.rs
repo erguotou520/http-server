@@ -23,15 +23,9 @@ use local_ip_address::list_afinet_netifas;
 use open::that;
 
 use crate::cli::{CliOption, WorkMode};
-use crate::proxy::forward_request;
+use crate::proxy::{forward_request, ProxyItem};
 
 use askama::Template;
-
-#[derive(Clone)]
-struct ProxyItem {
-    origin_path: String,
-    target_url: String,
-}
 
 #[derive(Template)]
 #[template(path = "list.html")]
@@ -433,8 +427,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 ignore_pattern: ignore_pattern.clone(),
                 custom_404_url: custom_404_url.clone(),
                 enable_upload,
-            }))
-            .service(handler);
+            }));
         // 上传
         if enable_upload {
             app = app.service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
@@ -444,10 +437,11 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             let _proxy = proxy.clone();
             app = app.service(
                 web::scope(&_proxy.origin_path)
-                    .app_data(web::Data::new(_proxy.target_url))
+                    .app_data(web::Data::new(_proxy))
                     .default_service(web::to(forward_request)),
-            );
+            )
         }
+        app = app.service(handler);
         return app;
     });
 

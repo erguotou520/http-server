@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": ["-f", "examples/dist", "-m", "index", "-u", "--custom-404", "/404.html", "-p", "/api->https://dogapi.dog/api"],
+      "args": ["-f", "examples/dist", "-m", "index", "--custom-404", "/404.html", "-b", "abc", "-P", "/api->https://dogapi.dog"],
       "cwd": "${workspaceFolder}"
     },
     {
