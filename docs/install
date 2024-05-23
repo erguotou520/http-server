@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -e
+
+function get_os_name() {
+  if [ "$(uname -s)" == "Darwin" ]; then
+    os_name="mac"
+  elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+    os_name="linux"
+  elif [ "$(expr substr $(uname -s) 1 5)" == "MINGW" ]; then
+    os_name="windows"
+  fi
+}
+
+get_os_name
+cpu_arch=$(uname -m)
+
+function get_fb_version() {
+  fb_version=$(curl -s https://bin.fireboom.io/prod/version)
+}
+
+function get_os_bin_name() {
+  ctl_filename="$1-${os_name}"
+  if [ $os_name == 'windows' ]; then
+    if [ $cpu_arch == 'arm64' ] || [ $cpu_arch == 'aarch64' ]; then
+      ctl_filename="${ctl_filename}-arm64.exe"
+    else
+      ctl_filename="${ctl_filename}.exe"
+    fi
+  else
+    if [ $cpu_arch == 'arm64' ] || [ $cpu_arch == 'aarch64' ]; then
+      ctl_filename="${ctl_filename}-arm64"
+    fi
+  fi
+}
+
+function download_hs() {
+  get_os_bin_name hs
+  get_fb_version
+  bin_url="https://hs.erguotou.me/$1/${ctl_filename}.tar.gz"
+  echo $bin_url
+
+  curl -o ${ctl_filename}.tar.gz $bin_url
+  tar -zxvf ${ctl_filename}.tar.gz
+  mv ${ctl_filename} hs
+  rm -rf ${ctl_filename}.tar.gz
+  chmod +x hs
+}
+
+download_hs
