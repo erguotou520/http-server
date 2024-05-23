@@ -3,6 +3,7 @@ use actix_web::error::ErrorUnauthorized;
 use actix_web::middleware::Condition;
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
+use awc::Client;
 use chrono::prelude::DateTime;
 use chrono::Local;
 use env_logger::Env;
@@ -451,6 +452,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             app = app.service(
                 web::scope(&_proxy.origin_path)
                     .app_data(web::Data::new(_proxy))
+                    .app_data(web::Data::new(Client::new()))
                     .default_service(web::to(forward_request)),
             )
         }

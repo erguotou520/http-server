@@ -11,19 +11,6 @@ pub struct ProxyItem {
     pub target_url: String,
 }
 
-// struct HttpClient {
-//     // 单例模式
-//     client: Client,
-// }
-
-// impl HttpClient {
-//     pub fn new() -> Self {
-//         HttpClient {
-//             client: Client::new(),
-//         }
-//     }
-// }
-
 /// Forwards the incoming HTTP request using `awc`.
 /// /api->http://example.com/ means /api/users -> http://example.com/users
 /// /api->http://example.com/api means /api/users -> http://example.com/api/users
@@ -33,35 +20,11 @@ pub async fn forward_request(
     req: HttpRequest,
     payload: web::Payload,
     proxy_config: web::Data<ProxyItem>,
+    client: web::Data<Client>,
 ) -> Result<HttpResponse, Error> {
-    let client = Client::new();
-    // 从代理地址开始
-    let mut new_url = Url::parse(&proxy_config.target_url).unwrap();
-    // 去除代理url前缀
-    let _left_path = req.uri().path().strip_prefix(&proxy_config.origin_path);
-    if let Some(mut left_path) = _left_path {
-        // 补全开头的/
-        let left_path_str = if !left_path.starts_with("/") {
-            format!("/{}", left_path)
-        } else { left_path.to_string() };
-        left_path = left_path_str.as_str();
-        // 如果代理url是以/结尾的，那么就只追加left_path
-        // 否则追加整个path
-        let new_path = format!(
-            "{}{}",
-            &new_url.path(),
-            if proxy_config.target_url.ends_with("/") {
-                left_path
-            } else {
-                req.uri().path()
-            }
-        );
-        new_url.set_path(&new_path);
-
-        new_url.set_query(req.uri().query());
-
+    if let Ok(proxy_url) = get_proxy_path(&req, &proxy_config) {
         let forwarded_req = client
-            .request_from(new_url.as_str(), req.head())
+            .request_from(proxy_url.as_str(), req.head())
             .no_decompress();
 
         // TODO: This forwarded implementation is incomplete as it only handles the unofficial
@@ -95,7 +58,42 @@ pub async fn forward_request(
 pub async fn ws_forward_request(
     req: HttpRequest,
     payload: web::Payload,
-    _proxy_config: web::Data<ProxyItem>,
+    proxy_config: web::Data<ProxyItem>,
 ) -> Result<HttpResponse, Error> {
-    actix_ws_proxy::start(&req, format!("ws://127.0.0.1:5000"), payload).await
+    if let Ok(proxy_url) = get_proxy_path(&req, &proxy_config) {
+        actix_ws_proxy::start(&req, proxy_url.to_string(), payload).await
+    } else {
+        Ok(HttpResponse::InternalServerError().body("Invalid websocket proxy configuration"))
+    }
+}
+
+fn get_proxy_path(req: &HttpRequest, proxy_config: &ProxyItem) -> Result<Url, bool> {
+    let mut new_url = Url::parse(&proxy_config.target_url).unwrap();
+    // 去除代理url前缀
+    let _left_path = req.uri().path().strip_prefix(&proxy_config.origin_path);
+    if let Some(mut left_path) = _left_path {
+        // 补全开头的/
+        let left_path_str = if !left_path.starts_with("/") {
+            format!("/{}", left_path)
+        } else {
+            left_path.to_string()
+        };
+        left_path = left_path_str.as_str();
+        // 如果代理url是以/结尾的，那么就只追加left_path
+        // 否则追加整个path
+        let joined_path = new_url.join(if proxy_config.target_url.ends_with("/") {
+            left_path
+        } else {
+            req.uri().path()
+        });
+
+        if let Ok(joined_url) = joined_path {
+            new_url = joined_url;
+        }
+
+        new_url.set_query(req.uri().query());
+        Ok(new_url)
+    } else {
+        Err(false)
+    }
 }
