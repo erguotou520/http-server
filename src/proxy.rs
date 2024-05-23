@@ -91,3 +91,11 @@ pub async fn forward_request(
         Ok(HttpResponse::InternalServerError().body("Invalid proxy configuration"))
     }
 }
+
+pub async fn ws_forward_request(
+    req: HttpRequest,
+    payload: web::Payload,
+    _proxy_config: web::Data<ProxyItem>,
+) -> Result<HttpResponse, Error> {
+    actix_ws_proxy::start(&req, format!("ws://127.0.0.1:5000"), payload).await
+}

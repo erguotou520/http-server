@@ -75,6 +75,10 @@ pub struct CliOption {
     #[arg(short = 'P', long, value_name = "PROXY", num_args(0..))]
     pub proxies: Vec<String>,
 
+    /// Set proxy for websocket, eg: /ws->http://127.0.0.1:5000
+    #[arg(short = 'W', long, value_name = "WEBSOCKET-PROXY", num_args(0..))]
+    pub websocket_proxies: Vec<String>,
+
     /// files to ignore, support regex
     #[arg(long, value_name = "IGNORE-FILES", default_value_t = String::from(r"^\."))]
     pub ignore_files: String,

@@ -23,7 +23,7 @@ use local_ip_address::list_afinet_netifas;
 use open::that;
 
 use crate::cli::{CliOption, WorkMode};
-use crate::proxy::{forward_request, ProxyItem};
+use crate::proxy::{forward_request, ws_forward_request, ProxyItem};
 
 use askama::Template;
 
@@ -375,6 +375,19 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             };
         })
         .collect();
+    // websocket 代理
+    let ws_proxies: Vec<ProxyItem> = options
+    .websocket_proxies
+    .iter()
+    .map(|item| {
+        let s: Vec<&str> = item.split("->").collect();
+        return ProxyItem {
+            origin_path: s[0].to_string(),
+            target_url: s[1].to_string(),
+        };
+    })
+    .collect();
+    // 初始化日志
     env_logger::init_from_env(Env::default().default_filter_or("info"));
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
@@ -439,6 +452,15 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 web::scope(&_proxy.origin_path)
                     .app_data(web::Data::new(_proxy))
                     .default_service(web::to(forward_request)),
+            )
+        }
+        // websocket 代理
+        for proxy in &ws_proxies {
+            let _proxy = proxy.clone();
+            app = app.service(
+                web::scope(&_proxy.origin_path)
+                    .app_data(web::Data::new(_proxy))
+                    .default_service(web::to(ws_forward_request)),
             )
         }
         app = app.service(handler);
