@@ -23,6 +23,23 @@ jobs:
             archive: zip
     steps:
       - uses: actions/checkout@v4
+      - name: Output openssl version
+        run: openssl version
+      - name: Install Windows openssl
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: |
+          choco install openssl
+          pacman -Syu
+          pacman -S openssl
+      - name: Install Mac openssl
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: 
+          brew update && brew upgrade openssl
+      - name: Install Linux openssl
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.5
         env:
