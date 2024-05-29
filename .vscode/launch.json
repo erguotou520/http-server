@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": ["-f", "examples/dist", "-m", "index", "--custom-404", "/404.html", "-b", "abc", "-P", "/api->https://dogapi.dog", "-W", "/ws->ws://echo.websocket.in"],
+      "args": ["-f", "examples/dist", "-m", "index", "--custom-404", "/404.html", "-b", "abc", "-P", "/api->https://dogapi.dog", "-W", "/ws->wss://echo.websocket.in"],
       "cwd": "${workspaceFolder}"
     },
     {

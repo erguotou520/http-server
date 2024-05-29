@@ -5,6 +5,8 @@ use actix_web::{
 use awc::Client;
 use url::Url;
 
+use crate::ws_proxy;
+
 #[derive(Clone)]
 pub struct ProxyItem {
     pub origin_path: String,
@@ -61,7 +63,7 @@ pub async fn ws_forward_request(
     proxy_config: web::Data<ProxyItem>,
 ) -> Result<HttpResponse, Error> {
     if let Ok(proxy_url) = get_proxy_path(&req, &proxy_config) {
-        actix_ws_proxy::start(&req, proxy_url.to_string(), payload).await
+        ws_proxy::start(&req, proxy_url.to_string(), payload).await
     } else {
         Ok(HttpResponse::InternalServerError().body("Invalid websocket proxy configuration"))
     }
