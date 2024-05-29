@@ -28,9 +28,12 @@ jobs:
       - name: Install Windows openssl
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: |
-          choco install openssl
           pacman -Syu
           pacman -S openssl
+      - name: Set up Homebrew
+        if: matrix.target == 'x86_64-apple-darwin'
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
       - name: Install Mac openssl
         if: matrix.target == 'x86_64-apple-darwin'
         run: 
