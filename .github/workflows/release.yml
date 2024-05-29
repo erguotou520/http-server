@@ -36,11 +36,17 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_SDK_VERSION: 10.15
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+          rustup install stable
+          cargo --version
+      - name: Install dependencies
+        run: cargo build --all --release && strip target/release/hs && zip -r target/release/hs-darwin.zip target/release/hs
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v1-release
         with:
-          RUSTTARGET: x86_64-apple-darwin
-          ARCHIVE_TYPES: zip
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/hs-darwin.zip
+          asset_name: hs-darwin.zip
+          tag: build-${{ github.ref }}
