@@ -26,6 +26,8 @@ jobs:
           #   archive: zip
     steps:
       - uses: actions/checkout@v4
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Compile and release
         id: compile
         uses: rust-build/rust-build.action@v1.4.5
@@ -43,23 +45,23 @@ jobs:
           # asset_name: ${{ steps.compile.outputs.BUILT_ARCHIVE }}
           overwrite: true
           tag: build-${{ github.ref }}
-  release-mac:
-    name: release x86_64-apple-darwin
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          rustup install stable
-          cargo --version
-      - name: Install dependencies
-        run: cargo build --all --release && strip target/release/hs && zip -rj target/release/x86_64-apple-darwin.zip target/release/hs
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/release/x86_64-apple-darwin.zip
-          asset_name: x86_64-apple-darwin.zip
-          overwrite: true
-          tag: build-${{ github.ref }}
+  # release-mac:
+  #   name: release x86_64-apple-darwin
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install Rust
+  #       run: |
+  #         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+  #         rustup install stable
+  #         cargo --version
+  #     - name: Install dependencies
+  #       run: cargo build --all --release && strip target/release/hs && zip -rj target/release/x86_64-apple-darwin.zip target/release/hs
+  #     - name: Upload binaries to release
+  #       uses: svenstaro/upload-release-action@v2
+  #       with:
+  #         repo_token: ${{ secrets.GITHUB_TOKEN }}
+  #         file: target/release/x86_64-apple-darwin.zip
+  #         asset_name: x86_64-apple-darwin.zip
+  #         overwrite: true
+  #         tag: build-${{ github.ref }}
