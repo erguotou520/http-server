@@ -21,7 +21,7 @@ jobs:
           - target: x86_64-pc-windows-gnu
             archive: zip
           - target: x86_64-unknown-linux-musl
-            archive: tar.gz tar.xz tar.zst
+            archive: tar.gz
           # - target: x86_64-apple-darwin
           #   archive: zip
     steps:
@@ -44,7 +44,7 @@ jobs:
           overwrite: true
           tag: build-${{ github.ref }}
   release-mac:
-    name: release macos
+    name: release x86_64-apple-darwin
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
           rustup install stable
           cargo --version
       - name: Install dependencies
-        run: cargo build --all --release && strip target/release/hs && zip -r target/release/x86_64-apple-darwin.zip target/release/hs
+        run: cargo build --all --release && strip target/release/hs && zip -rj target/release/x86_64-apple-darwin.zip target/release/hs
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
