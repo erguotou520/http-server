@@ -54,6 +54,15 @@ jobs:
           asset_name: ${{ matrix.target }}.zip
           overwrite: true
           tag: ${{ github.ref }}
+      - name: R2 Upload Action
+        uses: ryand56/r2-upload-action@latest
+        with:
+          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET }}
+          source-dir: target/${{ matrix.target }}/release
+          destination-dir: ./release/${{ matrix.target }}
   release-mac:
     name: release x86_64-apple-darwin
     runs-on: macos-latest
@@ -84,3 +93,12 @@ jobs:
           asset_name: ${{ matrix.target }}.zip
           overwrite: true
           tag: ${{ github.ref }}
+      - name: R2 Upload Action
+        uses: ryand56/r2-upload-action@latest
+        with:
+          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET }}
+          source-dir: target/${{ matrix.target }}/release
+          destination-dir: ./release/${{ matrix.target }}
