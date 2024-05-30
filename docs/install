@@ -20,7 +20,7 @@ function get_bin_name() {
 
 
 function download_hs() {
-  bin_url="https://hs.erguotou.me/release/${bin_name}/${bin_name}.zip"
+  bin_url="https://hs.erguotou.me/release/${bin_name}/hs.zip"
   echo $bin_url
 
   curl -o ${bin_name}.zip $bin_url
