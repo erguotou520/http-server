@@ -1,0 +1,36 @@
+name: Build fireboom latest docker image from main branch
+on:
+  push:
+    tags:
+      - 'v*'
+    paths_ignore:
+      - './github/workflows/release.yaml'
+      - '.vscode'
+      - 'docs'
+      - 'examples'
+      - 'dev.sh'
+      - 'README.md'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: erguotou/hs:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
