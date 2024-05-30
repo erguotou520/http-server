@@ -1,5 +1,8 @@
 # .github/workflows/release.yml
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -16,37 +19,61 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-gnu
-            archive: zip
-          - target: x86_64-unknown-linux-musl
-            archive: tar.gz tar.xz tar.zst
+          - target: x86_64-unknown-linux-gnu
           # - target: x86_64-apple-darwin
-          #   archive: zip
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # MACOSX_SDK_VERSION: 10.15
+      - name: Install Rust
+        run: |
+          sudo apt-get update && sudo apt-get upgrade -y
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      - name: Add build target
+        run: rustup target add ${{ matrix.target }}
+      - name: Install windows compiler
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: sudo apt-get install mingw-w64 -y
+      - name: Build
+        run: cargo build --all --release --target ${{ matrix.target }}
+      - name: Strip
+        # if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: strip target/${{ matrix.target }}/release/hs
+      - name: Archive
+        run: zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          RUSTTARGET: ${{ matrix.target }}
-          ARCHIVE_TYPES: ${{ matrix.archive }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.target }}/release/hs.zip
+          asset_name: ${{ matrix.target }}.zip
+          overwrite: true
+          tag: ${{ github.ref }}
   release-mac:
-    name: release macos
+    name: release x86_64-apple-darwin
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+          - target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          rustup install stable
-          cargo --version
-      - name: Install dependencies
-        run: cargo build --all --release && strip target/release/hs && zip -r target/release/hs-darwin.zip target/release/hs
+      - name: Add build target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build
+        run: cargo build --all --release --target ${{ matrix.target }}
+      - name: Strip
+        run: strip target/${{ matrix.target }}/release/hs
+      - name: Archive
+        run: zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
       - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/release/hs-darwin.zip
-          asset_name: hs-darwin.zip
-          tag: build-${{ github.ref }}
+          file: target/${{ matrix.target }}/release/hs.zip
+          asset_name: ${{ matrix.target }}.zip
+          overwrite: true
+          tag: ${{ github.ref }}
