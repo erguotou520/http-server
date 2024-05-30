@@ -34,14 +34,18 @@ jobs:
         run: sudo apt-get install mingw-w64 -y
       - name: Build
         run: cargo build --all --release --target ${{ matrix.target }}
-      - name: Strip
+      - name: Strip & archive
         if: matrix.target != 'x86_64-pc-windows-gnu'
-        run: strip target/${{ matrix.target }}/release/hs
-      - name: Strip windows
+        run: |
+          strip target/${{ matrix.target }}/release/hs
+          zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
+      - name: Strip windows & archive
         if: matrix.target == 'x86_64-pc-windows-gnu'
-        run: strip target/${{ matrix.target }}/release/hs.exe
-      - name: Archive
-        run: zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
+        run:
+          strip target/${{ matrix.target }}/release/hs.exe
+          zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs.exe
+      # - name: Archive
+      #   run: zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
