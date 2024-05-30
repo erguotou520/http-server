@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 
 #[derive(clap::ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WorkMode {
-    // 默认
-    Default,
+    // 服务器模式
+    Server,
     // SPA模式
     SPA,
     // 目录列表模式
