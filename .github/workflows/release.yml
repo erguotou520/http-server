@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-gnu
-          - target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
           - target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v4
@@ -30,23 +30,28 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: rustup target add x86_64-pc-windows-gnu && sudo apt-get install mingw-w64 -y
       - name: Install linux compiler
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: rustup target add x86_64-unknown-linux-musl
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: rustup target add x86_64-unknown-linux-gnu
       - name: Install macos compiler
         if: matrix.target == 'x86_64-apple-darwin'
         run: |
           curl -L https://github.com/roblabla/MacOSX-SDKs/releases/download/13.3/MacOSX13.3.sdk.tar.xz | tar xJ
+          rustup target add x86_64-apple-darwin
+      - name: Build
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo build --all --release --target ${{ matrix.target }}
+      - name: Build macos
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
           export SDKROOT=$(pwd)/MacOSX13.3.sdk/
           export PATH=$PATH:~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin/
           export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=rust-lld
-          rustup target add x86_64-apple-darwin
-      - name: Build
-        run: cargo build --all --release --target ${{ matrix.target }}
+          cargo build --all --release --target ${{ matrix.target }}
       - name: Strip
         if: matrix.target != 'x86_64-pc-windows-gnu'
         run: strip target/${{ matrix.target }}/release/hs
       - name: Archive
-        run: zip -rj target//${{ matrix.target }}/release/hs.zip target//${{ matrix.target }}/release/hs
+        run: zip -rj target/${{ matrix.target }}/release/hs.zip target//${{ matrix.target }}/release/hs
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
