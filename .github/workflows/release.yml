@@ -35,8 +35,11 @@ jobs:
       - name: Build
         run: cargo build --all --release --target ${{ matrix.target }}
       - name: Strip
-        # if: matrix.target != 'x86_64-pc-windows-gnu'
+        if: matrix.target != 'x86_64-pc-windows-gnu'
         run: strip target/${{ matrix.target }}/release/hs
+      - name: Strip windows
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: strip target/${{ matrix.target }}/release/hs.exe
       - name: Archive
         run: zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
       - name: Upload binaries to release
