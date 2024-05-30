@@ -41,7 +41,7 @@ jobs:
           zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
       - name: Strip windows & archive
         if: matrix.target == 'x86_64-pc-windows-gnu'
-        run:
+        run: |
           strip target/${{ matrix.target }}/release/hs.exe
           zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs.exe
       # - name: Archive
