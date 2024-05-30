@@ -1,49 +1,36 @@
 #!/usr/bin/env bash
 set -e
 
-function get_os_name() {
-  if [ "$(uname -s)" == "Darwin" ]; then
-    os_name="mac"
-  elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-    os_name="linux"
-  elif [ "$(expr substr $(uname -s) 1 5)" == "MINGW" ]; then
-    os_name="windows"
-  fi
-}
-
-get_os_name
-cpu_arch=$(uname -m)
-
-function get_fb_version() {
-  fb_version=$(curl -s https://bin.fireboom.io/prod/version)
-}
-
-function get_os_bin_name() {
-  ctl_filename="$1-${os_name}"
-  if [ $os_name == 'windows' ]; then
-    if [ $cpu_arch == 'arm64' ] || [ $cpu_arch == 'aarch64' ]; then
-      ctl_filename="${ctl_filename}-arm64.exe"
+function get_bin_name() {
+  os_name=$(uname -s)
+  cpu_arch=$(uname -m)
+  if [ $os_name == "Darwin" ]; then
+    if [ $cpu_arch == "arm64" ]; then
+      bin_name="aarch64-apple-darwin"
     else
-      ctl_filename="${ctl_filename}.exe"
+      bin_name="x86_64-apple-darwin"
     fi
-  else
-    if [ $cpu_arch == 'arm64' ] || [ $cpu_arch == 'aarch64' ]; then
-      ctl_filename="${ctl_filename}-arm64"
-    fi
+  elif [ "$(expr substr $os_name 1 5)" == "Linux" ]; then
+    bin_name="x86_64-unknown-linux-gnu"
+  elif [ "$(expr substr $os_name 1 5)" == "MINGW" ]; then
+    bin_name="x86_64-pc-windows-gnu"
+    is_mingw=true
   fi
 }
+
 
 function download_hs() {
-  get_os_bin_name hs
-  get_fb_version
-  bin_url="https://hs.erguotou.me/$1/${ctl_filename}.tar.gz"
+  bin_url="https://hs.erguotou.me/release/${bin_name}/${bin_name}.zip"
   echo $bin_url
 
-  curl -o ${ctl_filename}.tar.gz $bin_url
-  tar -zxvf ${ctl_filename}.tar.gz
-  mv ${ctl_filename} hs
-  rm -rf ${ctl_filename}.tar.gz
-  chmod +x hs
+  curl -o ${bin_name}.zip $bin_url
+  # 解压并重命名为hs
+  unzip ${bin_name}.zip
+  rm ${bin_name}.zip
+  if [ !$is_mingw ]; then
+    chmod +x hs
+  fi
 }
 
+get_bin_name
 download_hs
