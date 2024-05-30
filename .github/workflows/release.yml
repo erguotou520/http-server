@@ -38,7 +38,8 @@ jobs:
         if: matrix.target != 'x86_64-pc-windows-gnu'
         run: |
           strip target/${{ matrix.target }}/release/hs
-          zip -rj target/${{ matrix.target }}/release/hs.zip target/${{ matrix.target }}/release/hs
+          mkdir release
+          zip -rj release/hs.zip target/${{ matrix.target }}/release/hs
       - name: Strip windows & archive
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: |
@@ -93,8 +94,8 @@ jobs:
           asset_name: ${{ matrix.target }}.zip
           overwrite: true
           tag: ${{ github.ref }}
-      - name: R2 Upload
-        uses: gemwalletcom/r2-upload@v1.0.0
+      - name: R2 Upload Action
+        uses: ryand56/r2-upload-action@latest
         with:
           r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
