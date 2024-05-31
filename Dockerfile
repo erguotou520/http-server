@@ -1,7 +1,8 @@
 FROM rust:alpine as builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
-RUN cargo build --release --no-default-features --no-run
+COPY src/main.rs ./src/
+RUN cargo fetch
 COPY . .
 RUN cargo build --release --all
 
