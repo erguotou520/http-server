@@ -14,3 +14,4 @@ COPY --from=builder /app/target/release/hs /usr/local/bin/hs
 Volume /app
 EXPOSE 8080
 ENTRYPOINT [ "hs" ]
+CMD [ "-f", "/app" ]
