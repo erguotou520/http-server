@@ -1,15 +1,15 @@
-name: Build fireboom latest docker image from main branch
+name: Build docker image
 on:
   push:
     tags:
       - 'v*'
-    paths_ignore:
-      - './github/workflows/release.yaml'
-      - '.vscode'
-      - 'docs'
-      - 'examples'
-      - 'dev.sh'
-      - 'README.md'
+    paths:
+      - '.github/workflows/docker.yml'
+      - src/**
+      - templates/**
+      - Cargo.toml
+      - Cargo.lock
+      - Dockerfile
 
 jobs:
   build:

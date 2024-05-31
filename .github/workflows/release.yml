@@ -31,8 +31,12 @@ jobs:
       - name: Install windows compiler
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: sudo apt-get install mingw-w64 -y
-      - name: Build
+      - name: Build windows
+        if: matrix.target == 'x86_64-pc-windows-gnu'
         run: cargo build --all --release --target ${{ matrix.target }}
+      - name: Build linux
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: TARGET_CC=x86_64-linux-musl-gcc cargo build --all --release --target ${{ matrix.target }}
       - name: Strip & archive
         if: matrix.target != 'x86_64-pc-windows-gnu'
         run: |
