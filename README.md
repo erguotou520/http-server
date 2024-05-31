@@ -81,3 +81,13 @@ Options:
   -V, --version
           Print version
 ```
+
+### Docker usage
+
+We provide a docker image `erguotou/hs` which bind `hs` inside.
+
+```bash
+docker run -p 8080:8080 -v $(pwd):/app erguotou/hs
+```
+
+We only provide `linux/amd64` and `linux/arm64` images. If you need other platforms, you can build your own image by yourself.
