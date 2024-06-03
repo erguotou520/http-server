@@ -13,6 +13,7 @@ use std::io::Read;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use log::{self, info};
 
 use actix_files::NamedFile;
 use actix_multipart::form::{tempfile::TempFile, MultipartForm};
@@ -325,6 +326,8 @@ async fn basic_auth(
 }
 
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
+    // 初始化日志
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
     // 获取base url，移除开头的/和结尾的/
     let mut base = options.base.clone();
     if base.starts_with("/") {
@@ -370,26 +373,29 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
         .iter()
         .map(|item| {
             let s: Vec<&str> = item.split("->").collect();
-            return ProxyItem {
+            let _proxy = ProxyItem {
                 origin_path: s[0].to_string(),
                 target_url: s[1].to_string(),
             };
+            info!("proxy {} -> {}", _proxy.origin_path, _proxy.target_url);
+            return _proxy;
         })
         .collect();
+
     // websocket 代理
     let ws_proxies: Vec<ProxyItem> = options
     .websocket_proxies
     .iter()
     .map(|item| {
         let s: Vec<&str> = item.split("->").collect();
-        return ProxyItem {
+        let _proxy = ProxyItem {
             origin_path: s[0].to_string(),
             target_url: s[1].to_string(),
         };
+        info!("proxy {} -> {}", _proxy.origin_path, _proxy.target_url);
+        return _proxy;
     })
     .collect();
-    // 初始化日志
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
     let server = HttpServer::new(move || {
         let mut _user_id = String::new();
         let mut _password = String::new();

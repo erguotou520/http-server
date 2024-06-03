@@ -81,3 +81,9 @@ Options:
   -V, --version
           Print version
 ```
+
+Here is an example of serving a SPA application:
+
+```bash
+hs -f /path/to/dist -m spa -P "/api->https://dogapi.dog" -W "/ws->wss://echo.websocket.in"
+```

@@ -1,6 +1,6 @@
 [package]
 name = "hs"
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
 author = "erguotou525@gmail.com"
 about = "A http server with best practice for modern web application"
@@ -28,3 +28,4 @@ actix = "0.13.3"
 actix-web-actors = "4.3.0"
 bytes = "1.6.0"
 futures = "0.3.30"
+log = "0.4.21"
