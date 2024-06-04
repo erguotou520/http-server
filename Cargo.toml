@@ -1,6 +1,6 @@
 [package]
 name = "hs"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 author = "erguotou525@gmail.com"
 about = "A http server with best practice for modern web application"

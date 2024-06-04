@@ -30,7 +30,7 @@ pub struct CliOption {
     pub host: String,
 
     /// Port to listen on
-    #[arg(long, value_name = "PORT", default_value_t = 8080)]
+    #[arg(short = 'p', long, value_name = "PORT", default_value_t = 8080)]
     pub port: u16,
 
     /// Enable compress

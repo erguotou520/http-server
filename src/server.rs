@@ -7,13 +7,14 @@ use awc::Client;
 use chrono::prelude::DateTime;
 use chrono::Local;
 use env_logger::Env;
-use fancy_regex::Regex;
+use fancy_regex::{Captures, Regex};
 use std::fs::read_dir;
 use std::io::Read;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use log::{self, info};
+use std::env;
 
 use actix_files::NamedFile;
 use actix_multipart::form::{tempfile::TempFile, MultipartForm};
@@ -367,17 +368,26 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     } else {
         String::from("")
     };
+
+    // 代理地址支持环境变量
+    // eg: http://${APP_URL} -> http://localhost:8080 with APP_URL=localhost:8080
+    let proxy_regex = Regex::new(r"\$\{(.*?)\}").unwrap();
+
     // 反向代理
     let proxies: Vec<ProxyItem> = options
         .proxies
         .iter()
         .map(|item| {
             let s: Vec<&str> = item.split("->").collect();
+            let target_url = proxy_regex.replace_all(s[1], |caps: &Captures | {
+                let var_name = &caps[1];
+                env::var(var_name).unwrap_or_else(|_| caps[0].to_string())
+            }).into_owned();
             let _proxy = ProxyItem {
                 origin_path: s[0].to_string(),
-                target_url: s[1].to_string(),
+                target_url: target_url,
             };
-            info!("proxy {} -> {}", _proxy.origin_path, _proxy.target_url);
+            info!("proxy: {} -> {}", _proxy.origin_path, _proxy.target_url);
             return _proxy;
         })
         .collect();
@@ -388,11 +398,15 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     .iter()
     .map(|item| {
         let s: Vec<&str> = item.split("->").collect();
+        let target_url = proxy_regex.replace_all(s[1], |caps: &Captures | {
+            let var_name = &caps[1];
+            env::var(var_name).unwrap_or_else(|_| caps[0].to_string())
+        }).into_owned();
         let _proxy = ProxyItem {
             origin_path: s[0].to_string(),
-            target_url: s[1].to_string(),
+            target_url: target_url,
         };
-        info!("proxy {} -> {}", _proxy.origin_path, _proxy.target_url);
+        info!("websocket proxy: {} -> {}", _proxy.origin_path, _proxy.target_url);
         return _proxy;
     })
     .collect();

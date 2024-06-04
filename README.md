@@ -85,7 +85,8 @@ Options:
 Here is an example of serving a SPA application:
 
 ```bash
-hs -f /path/to/dist -m spa -P "/api->https://dogapi.dog" -W "/ws->wss://echo.websocket.in"
+# APP_URL will be replaced with environment variable
+hs -f /path/to/dist -m spa -P "/api->https://dogapi.dog" -P "/app->${APP_URL}" -W "/ws->wss://echo.websocket.in"
 ```
 
 ### Docker usage
