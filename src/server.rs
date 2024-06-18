@@ -373,6 +373,9 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // eg: http://${APP_URL} -> http://localhost:8080 with APP_URL=localhost:8080
     let proxy_regex = Regex::new(r"\$\{(.*?)\}").unwrap();
 
+    // 是否反代所有路由
+    let mut all_proxyed = false;
+
     // 反向代理
     let proxies: Vec<ProxyItem> = options
         .proxies
@@ -387,6 +390,9 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 origin_path: s[0].to_string(),
                 target_url: target_url,
             };
+            if all_proxyed == false && _proxy.origin_path == "/" {
+                all_proxyed = true;
+            }
             info!("proxy: {} -> {}", _proxy.origin_path, _proxy.target_url);
             return _proxy;
         })
@@ -406,6 +412,9 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             origin_path: s[0].to_string(),
             target_url: target_url,
         };
+        if all_proxyed == false && _proxy.origin_path == "/" {
+            all_proxyed = true;
+        }
         info!("websocket proxy: {} -> {}", _proxy.origin_path, _proxy.target_url);
         return _proxy;
     })
@@ -468,10 +477,15 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
         }
         // 反向代理
         for proxy in &proxies {
-            let _proxy = proxy.clone();
+            let _origin_path = &proxy.origin_path;
+            if _origin_path == "/" {
+                app = app.app_data(web::Data::new(proxy.clone()))
+                .app_data(web::Data::new(Client::new()))
+                .default_service(web::to(forward_request))
+            }
             app = app.service(
-                web::scope(&_proxy.origin_path)
-                    .app_data(web::Data::new(_proxy))
+                web::scope(_origin_path)
+                    .app_data(web::Data::new(proxy.clone()))
                     .app_data(web::Data::new(Client::new()))
                     .default_service(web::to(forward_request)),
             )
@@ -485,7 +499,10 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                     .default_service(web::to(ws_forward_request)),
             )
         }
-        app = app.service(handler);
+        // 所有路由都被代理后就不需要文件路由了
+        if !all_proxyed {
+            app = app.service(handler);
+        }
         return app;
     });
 
