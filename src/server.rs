@@ -479,7 +479,6 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             if &base != "/" {
                 scope = format!("{}/_upload", base);
             }
-println!("{}", scope);
             app = app.service(web::scope(&scope).service(upload))
         }
         // 反向代理
