@@ -1,12 +1,18 @@
 use actix_web::dev::{Service, ServiceRequest};
 use actix_web::error::ErrorUnauthorized;
 use actix_web::middleware::Condition;
+use actix_web::{
+    body::MessageBody,
+    dev::ServiceResponse,
+    middleware::{from_fn, Next},
+    App, Error,
+};
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use awc::Client;
 use chrono::prelude::DateTime;
 use chrono::Local;
-use env_logger::Env;
+// use env_logger::Env;
 use fancy_regex::{Captures, Regex};
 use std::fs::read_dir;
 use std::io::Read;
@@ -14,6 +20,7 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::fs::metadata;
+use std::time::{Duration, SystemTime};
 use log::{self, info};
 use std::env;
 
@@ -21,12 +28,13 @@ use actix_files::NamedFile;
 use actix_multipart::form::{tempfile::TempFile, MultipartForm};
 use actix_web::http::header::{self, ContentDisposition, DispositionType};
 use actix_web::{
-    get, middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
+    get, middleware, post, web, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use local_ip_address::list_afinet_netifas;
 use open::that;
 
 use crate::cli::{CliOption, WorkMode};
+use crate::logger::LOGGER;
 use crate::proxy::{forward_request, ws_forward_request, ProxyItem};
 
 use askama::Template;
@@ -328,9 +336,28 @@ async fn basic_auth(
     }
 }
 
+async fn custom_logger_middleware(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    let method = req.method().to_string();
+    let path = req.path().to_string();
+    let ip = req.peer_addr().unwrap().ip().to_string();
+    let time_start = SystemTime::now();
+    let rep = next.call(req).await;
+    if let Ok(resp) = &rep {
+        let status = resp.status();
+        let time_end = SystemTime::now();
+        let time_diff = time_end.duration_since(time_start).unwrap();
+        let time_diff_ms = time_diff.as_millis() as f64;
+        LOGGER.info(format_args!("{} \"{} {}\" {} {}ms", ip, method, path, status.as_u16(), time_diff_ms).to_string());
+    }
+    return rep
+}
+
 pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     // 初始化日志
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
+    // env_logger::init_from_env(Env::default().default_filter_or("info"));
     // 获取base url，移除开头的/和结尾的/
     let mut base = options.base.clone();
     if base.starts_with("/") {
@@ -433,7 +460,8 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             _password = parts[1].to_string();
         }
         let mut app = App::new()
-            .wrap(middleware::Logger::default())
+            // .wrap(middleware::Logger::default())
+            .wrap(from_fn(custom_logger_middleware))
             .wrap(Condition::new(compress, middleware::Compress::default()))
             .wrap(Condition::new(
                 !_user_id.is_empty(),
@@ -458,10 +486,6 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                     Ok(res)
                 }
             })
-            // 使用actix-web的scope有问题，无法响应 /，只能响应子路由，所以手动处理
-            // .service(handler)
-            // .service(
-            //     web::scope(if &base == "/" { "" } else { &base })
             .app_data(web::Data::new(AppState {
                 base_url: base.clone(),
                 username: _user_id.to_string(),
@@ -510,7 +534,10 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             app = app.service(handler);
         }
         return app;
-    });
+    })
+    .backlog(1024)
+    .keep_alive(Duration::from_secs(75)) // 保持连接
+    .client_request_timeout(Duration::from_secs(10));
 
     let host = options.host.as_str();
 

@@ -58,10 +58,10 @@ Options:
           Automatically open the browser
       --cache
           Cache duration for static files
-      --log <LOG>
-          Path to save log at
-      --error-log <ERROR_LOG>
-          Path to save error log at
+#       --log <LOG>
+#           Path to save log at
+#       --error-log <ERROR_LOG>
+#           Path to save error log at
   -u, --upload
           Enable upload, recommend to enable this in Index mode
   -s, --security <SECURITY>

@@ -2,6 +2,7 @@ mod server;
 mod cli;
 mod proxy;
 mod ws_proxy;
+mod logger;
 
 use clap::Parser;
 use cli::{CliOption, Commands};

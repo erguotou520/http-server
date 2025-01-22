@@ -52,12 +52,12 @@ pub struct CliOption {
     pub cache: bool,
 
     /// Path to save log at
-    #[arg(long, value_name = "LOG")]
-    pub log: Option<String>,
+    // #[arg(long, value_name = "LOG")]
+    // pub log: Option<String>,
 
-    /// Path to save error log at
-    #[arg(long, value_name = "ERROR_LOG")]
-    pub error_log: Option<String>,
+    // /// Path to save error log at
+    // #[arg(long, value_name = "ERROR_LOG")]
+    // pub error_log: Option<String>,
 
     /// Enable upload, recommend to enable this in Index mode
     #[arg(short = 'u', long, value_name = "UPLOAD", default_value_t = false)]
