@@ -1,25 +1,25 @@
-# Rust HTTP Server
+# 🚀 Rust HTTP Server
 
-This is a simple HTTP server implemented in Rust. It amis to replace `nginx` in frontend deployment with docker.
+A lightning-fast HTTP server built with Rust, designed to replace `nginx` in frontend deployments with Docker. Simple yet powerful! ⚡️
 
-We provide a single binary executable file `hs` which can be used to start the server.
+If you are familiar with `nginx` or [http-server](https://www.npmjs.com/package/http-server) or [vercel serve](https://www.npmjs.com/package/serve), it should be easy to understand and use this server.
 
-If you are familiar with `nginx` or (http-server)[https://www.npmjs.com/package/http-server] or (vercel serve)[https://www.npmjs.com/package/serve], it should be easy to understand and use this server.
+## 🎯 Key Features
 
-## Features
+- 📦 Single binary executable (`hs`)
+- 🦀 Pure Rust implementation for maximum performance
+- 📂 Directory listing with Index mode
+- 🌐 SPA (Single Page Application) mode
+- 🎨 Custom 404 page support
+- 🗜️ Gzip/Deflate compression
+- 💾 Smart cache control
+- 📤 File upload capability
+- 🔄 HTTP & WebSocket proxy support
+- 🔒 Basic authentication
 
-- One single binary executable file `hs`
-- Rust native HTTP server implementation
-- Index mode for directory listing
-- SPA mode for single page application
-- Support for custom 404 page
-- Compressed response with gzip or deflate encoding
-- Automatic cache control
-- Upload enabled
-- Http proxy & websocket proxy support
-- Basic authentication support
+## 🚀 Quick Start
 
-## Usage
+### 📥 Installation
 
 ```bash
 # Install
@@ -31,7 +31,7 @@ curl hs.erguotou.me/install | bash
 
 For more options, you can run `./hs --help` or read the following sections.
 
-### Options
+### 🛠️ Options
 
 ```bash
 ./hs --help
@@ -89,7 +89,7 @@ Here is an example of serving a SPA application:
 hs -f /path/to/dist -m spa -P "/api->https://dogapi.dog" -P "/app->${APP_URL}" -W "/ws->wss://echo.websocket.in"
 ```
 
-### Docker usage
+### 🐳 Docker Usage
 
 We provide a docker image `erguotou/hs` which bind `hs` inside.
 
