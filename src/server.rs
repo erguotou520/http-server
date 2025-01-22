@@ -13,6 +13,7 @@ use std::io::Read;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::fs::metadata;
 use log::{self, info};
 use std::env;
 
@@ -68,7 +69,7 @@ struct UploadForm {
     path: actix_multipart::form::text::Text<String>,
 }
 
-#[post("/_upload")]
+#[post("")]
 async fn upload(
     MultipartForm(form): MultipartForm<UploadForm>,
     state: web::Data<AppState>,
@@ -106,9 +107,9 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
     let mode = state.mode;
     let existed = path.try_exists().unwrap();
     if existed {
-        let file = NamedFile::open_async(&path).await?;
+        let md = metadata(&path).unwrap();
         // 目录
-        if file.metadata().is_dir() {
+        if md.is_dir() {
             // 目录索引模式
             if mode == WorkMode::Index {
                 return render_dir_index(
@@ -132,6 +133,7 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
             return Ok(forbidden_response());
         } else {
             // 返回文件本身
+            let file = NamedFile::open_async(&path).await?;
             let mut response = file.prefer_utf8(true);
             if state.cache {
                 response = response.use_etag(true).use_last_modified(true);
@@ -473,7 +475,12 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             }));
         // 上传
         if enable_upload {
-            app = app.service(web::scope(if &base == "/" { "" } else { &base }).service(upload))
+            let mut scope = String::from("/_upload");
+            if &base != "/" {
+                scope = format!("{}/_upload", base);
+            }
+println!("{}", scope);
+            app = app.service(web::scope(&scope).service(upload))
         }
         // 反向代理
         for proxy in &proxies {

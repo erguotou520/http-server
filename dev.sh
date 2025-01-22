@@ -1,1 +1,0 @@
-cargo watch -c -w src -x run -- -f examples/dist -m index

@@ -60,6 +60,9 @@
     font-style: italic;
     color: var(--minor-text-color);
   }
+  footer .tip {
+    margin-left: 24px;
+  }
   </style>
   {% if enable_upload -%}
   <script>
@@ -129,6 +132,6 @@
       {% endfor -%}
     </tbody>
   </table>
-  <footer>Http server - Powered by <a href="https://github.com/erguotou520/http-server" target="github">hs</a></footer>
+  <footer>Http server - Powered by <a href="https://github.com/erguotou520/http-server" target="github">hs</a>.{% if enable_upload -%}<span class="tip">Drag file to upload.</span>{% endif -%}</footer>
 </body>
 </html>
