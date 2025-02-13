@@ -4,6 +4,10 @@ A lightning-fast HTTP server built with Rust, designed to replace `nginx` in fro
 
 If you are familiar with `nginx` or [http-server](https://www.npmjs.com/package/http-server) or [vercel serve](https://www.npmjs.com/package/serve), it should be easy to understand and use this server.
 
+[Github repository](https://github.com/erguotou520/http-server)
+
+[Docker Hub](https://hub.docker.com/r/erguotou/hs)
+
 ## 🎯 Key Features
 
 - 📦 Single binary executable (`hs`)
