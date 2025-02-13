@@ -11,7 +11,7 @@ FROM alpine:latest
 LABEL maintainer="erguotou"
 WORKDIR /app
 COPY --from=builder /app/target/release/hs /usr/local/bin/hs
-Volume /app
+VOLUME /app
 EXPOSE 8080
 ENTRYPOINT [ "hs" ]
 CMD [ "-f", "/app" ]
