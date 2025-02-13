@@ -1,6 +1,8 @@
 name: Update docker readme
 on:
   push:
+    branches:
+      - main
     paths:
       - .github/workflows/docker-readme.yml
       - README.md
@@ -15,5 +17,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          repository: erguotou/hs
+          repository: "erguotou/hs"
           short-description: "A simple, high-performance, and resource-friendly web server like nginx"
