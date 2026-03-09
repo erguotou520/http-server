@@ -27,10 +27,15 @@ If you are familiar with `nginx` or [http-server](https://www.npmjs.com/package/
 
 ```bash
 # Install
-curl hs.erguotou.me/install | bash
+curl https://hs.erguotou.me/install | bash
 
 # Simple server, it will serve current directory with index mode, open http://localhost:8080 in your browser to see it
 ./hs
+
+# You can move the binary file to global excutable folder and run hs directly
+# eg:
+# sudo mv ./hs /usr/local/bin
+# hs --version
 ```
 
 For more options, you can run `./hs --help` or read the following sections.
