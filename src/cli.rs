@@ -21,6 +21,11 @@ pub struct CliOption {
     #[arg(short = 'f', long, value_name = "PATH", default_value_t = String::from("."))]
     pub path: String,
 
+    /// Folder to serve (positional, overrides -f/--path if provided)
+    /// e.g. `hs .` or `hs /path/to/dist`
+    #[arg(value_name = "FOLDER")]
+    pub folder: Option<String>,
+
     /// Base URL path
     #[arg(short = 'b', long, value_name = "BASE", default_value_t = String::from(""))]
     pub base: String,

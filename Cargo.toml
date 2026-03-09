@@ -1,6 +1,6 @@
 [package]
 name = "hs"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 author = "erguotou525@gmail.com"
 about = "A http server with best practice for modern web application"
@@ -30,3 +30,6 @@ bytes = "1.6.0"
 futures = "0.3.30"
 log = "0.4.21"
 crossbeam-channel = "0.5.14"
+
+[dev-dependencies]
+tempfile = "3"

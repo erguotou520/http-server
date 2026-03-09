@@ -82,10 +82,9 @@ async fn upload(
     MultipartForm(form): MultipartForm<UploadForm>,
     state: web::Data<AppState>,
 ) -> Result<impl Responder, Error> {
+    let dest_dir = state.root_path.join(&*form.path);
     for f in form.files {
-        let path = PathBuf::from(state.root_path.clone())
-            .join(form.path.clone())
-            .join(f.file_name.unwrap());
+        let path = dest_dir.join(f.file_name.unwrap());
         f.file.persist(path).unwrap();
     }
 
@@ -95,17 +94,14 @@ async fn upload(
 #[get("{filename:.*}")]
 async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse, Error> {
     let _file_path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    let prefix_url = state.base_url.clone();
-    // 去掉前缀
-    let _remove_prefix = _file_path.strip_prefix(&prefix_url);
-    let file_path = if let Ok(path) = _remove_prefix {
-        path.to_path_buf()
-    } else {
-        _file_path.to_path_buf()
+    // 去掉前缀（借用，不 clone）
+    let file_path = match _file_path.strip_prefix(&state.base_url) {
+        Ok(p) => p.to_path_buf(),
+        Err(_) => _file_path,
     };
     // 对于忽略文件要屏蔽
     if !file_path.starts_with(".well-known") {
-        if let Ok(_match) = state.ignore_pattern.is_match(&file_path.to_str().unwrap()) {
+        if let Ok(_match) = state.ignore_pattern.is_match(file_path.to_str().unwrap()) {
             if _match {
                 return Ok(not_found_response(state));
             }
@@ -113,53 +109,52 @@ async fn handler(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpRes
     }
     let path = state.root_path.join(&file_path);
     let mode = state.mode;
-    let existed = path.try_exists().unwrap();
-    if existed {
-        let md = metadata(&path).unwrap();
-        // 目录
-        if md.is_dir() {
-            // 目录索引模式
-            if mode == WorkMode::Index {
-                return render_dir_index(
-                    &state.base_url,
-                    &state.root_path,
-                    &file_path,
-                    &state.ignore_pattern,
-                    state.enable_upload,
-                );
+    // 合并两次 stat：try_exists()+metadata() → 单次 metadata()
+    match metadata(&path) {
+        Ok(md) => {
+            // 目录
+            if md.is_dir() {
+                // 目录索引模式
+                if mode == WorkMode::Index {
+                    return render_dir_index(
+                        &state.base_url,
+                        &state.root_path,
+                        &file_path,
+                        &state.ignore_pattern,
+                        state.enable_upload,
+                    );
+                }
+                // SPA 模式
+                if mode == WorkMode::SPA {
+                    if let Ok(response) = auto_render_index_html(&state.root_path) {
+                        return Ok(response.into_response(&req));
+                    } else {
+                        return Ok(not_found_response(state));
+                    }
+                }
+                // 默认模式 403
+                return Ok(forbidden_response());
+            } else {
+                // 返回文件本身
+                let file = NamedFile::open_async(&path).await?;
+                let mut response = file.prefer_utf8(true);
+                if state.cache {
+                    response = response.use_etag(true).use_last_modified(true);
+                } else {
+                    response = response.use_etag(false).use_last_modified(false);
+                }
+                Ok(response.into_response(&req))
             }
-            // SPA 模式
+        }
+        Err(_) => {
+            // 文件不存在
             if mode == WorkMode::SPA {
-                // try 返回 index.html
                 if let Ok(response) = auto_render_index_html(&state.root_path) {
                     return Ok(response.into_response(&req));
-                } else {
-                    return Ok(not_found_response(state));
                 }
             }
-            // 默认模式 403
-            return Ok(forbidden_response());
-        } else {
-            // 返回文件本身
-            let file = NamedFile::open_async(&path).await?;
-            let mut response = file.prefer_utf8(true);
-            if state.cache {
-                response = response.use_etag(true).use_last_modified(true);
-            }
-            Ok(response.into_response(&req))
+            Ok(not_found_response(state))
         }
-    } else {
-        // 文件不存在
-        // 如果是 spa 模式
-        if mode == WorkMode::SPA {
-            // try 返回 index.html
-            if let Ok(response) = auto_render_index_html(&state.root_path) {
-                return Ok(response.into_response(&req));
-            } else {
-                return Ok(not_found_response(state));
-            }
-        }
-        Ok(not_found_response(state))
     }
 }
 
@@ -198,27 +193,30 @@ fn render_dir_index(
     let mut files: Vec<FileItem> = vec![];
 
     // 遍历目录
-    for file in read_dir(base_path.join(file_path))? {
-        let file = file?;
-        // 去掉base_path前缀
-        let file_path =
-            String::from(file.path().to_str().unwrap()).replace(base_path.to_str().unwrap(), "");
-        let name = String::from(file.file_name().to_str().unwrap());
+    for entry in read_dir(base_path.join(file_path))? {
+        let entry = entry?;
+        let name = String::from(entry.file_name().to_str().unwrap());
         // 忽略隐藏文件
-        if !&name.starts_with(".well-known") {
+        if !name.starts_with(".well-known") {
             if let Ok(_match) = ignore_pattern.is_match(&name) {
                 if _match {
                     continue;
                 }
             }
         }
-        let modified = file.metadata()?.modified()?;
-        let modified_local: DateTime<Local> = modified.into();
+        // 单次 metadata，避免多次 stat syscall
+        let md = entry.metadata()?;
+        let modified_local: DateTime<Local> = md.modified()?.into();
         let update_time = modified_local.format("%Y-%m-%d %H:%M:%S").to_string();
-        if file.path().is_dir() {
+        // 用 strip_prefix 代替 string replace，避免额外堆分配
+        let entry_rel = entry.path()
+            .strip_prefix(base_path)
+            .map(|p| format!("/{}", p.to_string_lossy()))
+            .unwrap_or_default();
+        if md.is_dir() {
             files.push(FileItem {
                 name,
-                path: file_path,
+                path: entry_rel,
                 is_dir: true,
                 size: String::from("0"),
                 update_time,
@@ -226,9 +224,9 @@ fn render_dir_index(
         } else {
             files.push(FileItem {
                 name,
-                path: file_path,
+                path: entry_rel,
                 is_dir: false,
-                size: format_file_size(file.metadata()?.len()),
+                size: format_file_size(md.len()),
                 update_time,
             })
         }
@@ -317,7 +315,7 @@ async fn basic_auth(
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let username = credentials.user_id();
 
-    let state = req.app_data::<AppState>();
+    let state = req.app_data::<web::Data<AppState>>();
     match state {
         None => Ok(req),
         Some(state) => {
@@ -378,8 +376,14 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
     let disable_powered_by = options.disable_powered_by;
     // 是否开启上传
     let enable_upload = options.upload.clone();
-    // 获取文件路径
-    let root_path = options.path.clone();
+    // 获取文件路径，规范化为绝对路径（修复 -f . 时路径无 filename 的问题）
+    // 位置参数 folder 优先于 -f/--path
+    let raw_path = options.folder.as_deref().unwrap_or(&options.path);
+    let root_path = std::fs::canonicalize(raw_path)
+        .map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Path '{}' does not exist or is not accessible: {}", options.path, e),
+        ))?;
     // let log_path = options.log.clone();
     let security = options.security.clone();
     let mode = options.mode;
@@ -415,10 +419,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 let var_name = &caps[1];
                 env::var(var_name).unwrap_or_else(|_| caps[0].to_string())
             }).into_owned();
-            let _proxy = ProxyItem {
-                origin_path: s[0].to_string(),
-                target_url: target_url,
-            };
+            let _proxy = ProxyItem::new(s[0].to_string(), target_url);
             if all_proxyed == false && _proxy.origin_path == "/" {
                 all_proxyed = true;
             }
@@ -437,10 +438,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
             let var_name = &caps[1];
             env::var(var_name).unwrap_or_else(|_| caps[0].to_string())
         }).into_owned();
-        let _proxy = ProxyItem {
-            origin_path: s[0].to_string(),
-            target_url: target_url,
-        };
+        let _proxy = ProxyItem::new(s[0].to_string(), target_url);
         if all_proxyed == false && _proxy.origin_path == "/" {
             all_proxyed = true;
         }
@@ -490,7 +488,7 @@ pub async fn start_server(options: &CliOption) -> std::io::Result<()> {
                 base_url: base.clone(),
                 username: _user_id.to_string(),
                 password: _password.to_string(),
-                root_path: PathBuf::from(&root_path),
+                root_path: root_path.clone(),
                 mode,
                 cache,
                 ignore_pattern: ignore_pattern.clone(),
@@ -566,5 +564,529 @@ fn print_all_host(host: &str, port: u16, open: bool, base: &str) {
         if open {
             let _ = that(format!("http://{}:{}{}", host, port, base));
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{http::header, test, App};
+    use actix_web_httpauth::middleware::HttpAuthentication;
+    use std::str;
+    use tempfile::TempDir;
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /// 创建带有测试文件的临时目录
+    fn setup_dir() -> TempDir {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("index.html"), "<html>SPA Index</html>").unwrap();
+        std::fs::write(tmp.path().join("file.txt"), "Hello World").unwrap();
+        std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+        std::fs::write(tmp.path().join("subdir").join("sub.txt"), "Sub content").unwrap();
+        // 隐藏文件
+        std::fs::write(tmp.path().join(".hidden"), "secret").unwrap();
+        // .well-known 目录（ACME challenge，不应被 ignore 过滤）
+        std::fs::create_dir(tmp.path().join(".well-known")).unwrap();
+        std::fs::write(
+            tmp.path().join(".well-known").join("acme-challenge"),
+            "token-value",
+        )
+        .unwrap();
+        // 自定义 404 页面
+        std::fs::write(tmp.path().join("custom404.html"), "<h1>Custom 404</h1>").unwrap();
+        tmp
+    }
+
+    fn make_state(root: &TempDir, mode: WorkMode) -> AppState {
+        AppState {
+            base_url: String::new(),
+            username: String::new(),
+            password: String::new(),
+            root_path: root.path().to_path_buf(),
+            mode,
+            cache: true,
+            ignore_pattern: Regex::new(r"^\.").unwrap(),
+            custom_404_url: String::new(),
+            enable_upload: false,
+        }
+    }
+
+    // ── index 模式 ────────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_index_mode_root_returns_200_html() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+        assert!(ct.contains("text/html"));
+        let body = test::read_body(resp).await;
+        // 目录列表应该包含 file.txt 和 subdir
+        let body_str = str::from_utf8(&body).unwrap();
+        assert!(body_str.contains("file.txt") || body_str.contains("subdir"));
+    }
+
+    #[actix_web::test]
+    async fn test_index_mode_subdir_returns_200() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/subdir").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        let body_str = str::from_utf8(&body).unwrap();
+        assert!(body_str.contains("sub.txt"));
+    }
+
+    #[actix_web::test]
+    async fn test_index_mode_file_returns_content() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "Hello World");
+    }
+
+    // ── server 模式 ───────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_server_mode_directory_returns_403() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Server)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[actix_web::test]
+    async fn test_server_mode_file_returns_200() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Server)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+    }
+
+    // ── SPA 模式 ──────────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_spa_mode_nonexistent_route_falls_back_to_index() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::SPA)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/nonexistent/route").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "<html>SPA Index</html>");
+    }
+
+    #[actix_web::test]
+    async fn test_spa_mode_existing_file_served_directly() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::SPA)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "Hello World");
+    }
+
+    #[actix_web::test]
+    async fn test_spa_mode_directory_falls_back_to_index() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::SPA)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/subdir").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "<html>SPA Index</html>");
+    }
+
+    #[actix_web::test]
+    async fn test_spa_mode_no_index_html_returns_404() {
+        // 目录下没有 index.html 时，SPA 回退也应返回 404
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("other.txt"), "content").unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::SPA)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/nonexistent").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+    }
+
+    // ── 404 处理 ──────────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_nonexistent_file_returns_404() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/does-not-exist.html").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[actix_web::test]
+    async fn test_custom_404_page() {
+        let tmp = setup_dir();
+        let state = AppState {
+            custom_404_url: "custom404.html".to_string(),
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/missing-page").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+        let body = test::read_body(resp).await;
+        let body_str = str::from_utf8(&body).unwrap();
+        assert!(body_str.contains("Custom 404"));
+    }
+
+    // ── 缓存头 ────────────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_cache_enabled_has_etag() {
+        let tmp = setup_dir();
+        let state = AppState {
+            cache: true,
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        assert!(resp.headers().contains_key(header::ETAG));
+    }
+
+    #[actix_web::test]
+    async fn test_cache_disabled_no_etag() {
+        let tmp = setup_dir();
+        let state = AppState {
+            cache: false,
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        assert!(!resp.headers().contains_key(header::ETAG));
+    }
+
+    // ── 文件忽略规则 ──────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_hidden_file_returns_404() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/.hidden").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[actix_web::test]
+    async fn test_normal_file_not_ignored() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[actix_web::test]
+    async fn test_well_known_not_ignored() {
+        // .well-known 目录应豁免 ignore 规则
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get()
+            .uri("/.well-known/acme-challenge")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "token-value");
+    }
+
+    // ── Basic Auth ────────────────────────────────────────────────────────────
+
+    fn make_auth_state(root: &TempDir) -> AppState {
+        AppState {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            ..make_state(root, WorkMode::Index)
+        }
+    }
+
+    #[actix_web::test]
+    async fn test_basic_auth_no_credentials_returns_401() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_auth_state(&tmp)))
+                .wrap(HttpAuthentication::basic(basic_auth))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[actix_web::test]
+    async fn test_basic_auth_correct_credentials_returns_200() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_auth_state(&tmp)))
+                .wrap(HttpAuthentication::basic(basic_auth))
+                .service(handler),
+        )
+        .await;
+        // user:pass => dXNlcjpwYXNz
+        let req = test::TestRequest::get()
+            .uri("/file.txt")
+            .insert_header(("Authorization", "Basic dXNlcjpwYXNz"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[actix_web::test]
+    async fn test_basic_auth_wrong_credentials_returns_401() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_auth_state(&tmp)))
+                .wrap(HttpAuthentication::basic(basic_auth))
+                .service(handler),
+        )
+        .await;
+        // user:wrong => dXNlcjp3cm9uZw==
+        let req = test::TestRequest::get()
+            .uri("/file.txt")
+            .insert_header(("Authorization", "Basic dXNlcjp3cm9uZw=="))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 401);
+    }
+
+    // ── 文件上传 ──────────────────────────────────────────────────────────────
+
+    /// 构造 multipart 请求体
+    fn make_multipart_body(boundary: &str, dest_path: &str, filename: &str, content: &str) -> Vec<u8> {
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n{dest_path}\r\n\
+             --{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{filename}\"\r\nContent-Type: text/plain\r\n\r\n{content}\r\n\
+             --{boundary}--\r\n"
+        );
+        body.into_bytes()
+    }
+
+    #[actix_web::test]
+    async fn test_upload_creates_file() {
+        let tmp = setup_dir();
+        let state = AppState {
+            enable_upload: true,
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(web::scope("/_upload").service(upload)),
+        )
+        .await;
+        let boundary = "----testboundary12345";
+        let body = make_multipart_body(boundary, "", "uploaded.txt", "uploaded content");
+        let req = test::TestRequest::post()
+            .uri("/_upload")
+            .insert_header((
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let saved = tmp.path().join("uploaded.txt");
+        assert!(saved.exists(), "uploaded file should exist at {:?}", saved);
+        let content = std::fs::read_to_string(&saved).unwrap();
+        assert_eq!(content, "uploaded content");
+    }
+
+    // ── X-Powered-By ─────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_powered_by_disabled_no_header() {
+        let tmp = setup_dir();
+        // disable_powered_by=true 时不添加 X-Powered-By 头
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .wrap_fn(|req, srv| {
+                    let fut = srv.call(req);
+                    async move {
+                        let res = fut.await?;
+                        // disable_powered_by=true => do nothing
+                        Ok(res)
+                    }
+                })
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(!resp.headers().contains_key("x-powered-by"));
+    }
+
+    #[actix_web::test]
+    async fn test_powered_by_enabled_has_header() {
+        let tmp = setup_dir();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(make_state(&tmp, WorkMode::Index)))
+                .wrap_fn(|req, srv| {
+                    let fut = srv.call(req);
+                    async move {
+                        let mut res = fut.await?;
+                        res.headers_mut().insert(
+                            header::HeaderName::from_str("x-powered-by").unwrap(),
+                            header::HeaderValue::from_static("hs"),
+                        );
+                        Ok(res)
+                    }
+                })
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.headers().contains_key("x-powered-by"));
+    }
+
+    // ── Base URL ──────────────────────────────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_base_url_strips_prefix_and_serves_file() {
+        let tmp = setup_dir();
+        let state = AppState {
+            base_url: "mybase".to_string(),
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/mybase/file.txt").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = test::read_body(resp).await;
+        assert_eq!(body, "Hello World");
+    }
+
+    // ── root path canonicalize (fix: -f . 访问 / 报 "Provided path has no filename") ──
+
+    #[actix_web::test]
+    async fn test_absolute_root_path_serves_directory() {
+        // 使用绝对路径（等效于 canonicalize(".") 之后的效果）
+        let tmp = setup_dir();
+        let abs_path = tmp.path().canonicalize().unwrap();
+        let state = AppState {
+            root_path: abs_path,
+            ..make_state(&tmp, WorkMode::Index)
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(handler),
+        )
+        .await;
+        let req = test::TestRequest::get().uri("/").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+        assert!(ct.contains("text/html"));
     }
 }

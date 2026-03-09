@@ -1,9 +1,9 @@
 use std::fmt;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::sync::LazyLock;
 use std::thread;
 
-use chrono::{Local, Utc};
+use chrono::Local;
 use crossbeam_channel::Sender;
 
 // 定义日志级别
@@ -41,7 +41,7 @@ impl LogLevel {
 
 // 定义日志消息结构
 pub struct LogMessage {
-    timestamp: chrono::DateTime<Utc>,
+    timestamp: chrono::DateTime<Local>,
     level: LogLevel,
     message: String
 }
@@ -49,9 +49,8 @@ pub struct LogMessage {
 // 实现日志消息的格式化
 impl fmt::Display for LogMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let timestamp = self
-            .timestamp.with_timezone(&Local).to_rfc3339();
-      write!(f, "[{} \x1b[32m{}\x1b[0m] {}", timestamp, self.level.to_str(), self.message)
+        let timestamp = self.timestamp.to_rfc3339();
+        write!(f, "[{} \x1b[32m{}\x1b[0m] {}", timestamp, self.level.to_str(), self.message)
     }
 }
 
@@ -70,7 +69,8 @@ impl Logger {
 
         // 启动日志线程
         thread::spawn(move || {
-            let mut output = Box::new(io::stdout());
+            // BufWriter 减少 write syscall 次数
+            let mut output = BufWriter::new(io::stdout());
 
             // 从通道接收日志消息并写入
             for msg in receiver {
@@ -90,7 +90,8 @@ impl Logger {
             let msg = LogMessage {
                 level,
                 message,
-                timestamp: Utc::now(),
+                // 直接获取本地时间，避免 Utc→Local 二次转换
+                timestamp: Local::now(),
             };
             self.sender.send(msg).expect("Failed to send log message");
         }
